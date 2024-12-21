@@ -1,0 +1,15 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "ytdlpwav1",
+            "request": "launch",
+            "type": "dart",
+            "args": ["--cookiefile", "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt", "--playlistid", "PL0_dwOU2tpNDoU38L91WZ9mIJqsEh5EXH"]
+        }
+    ]
+}
