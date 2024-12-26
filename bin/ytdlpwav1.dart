@@ -1,61 +1,115 @@
+import 'dart:convert';
 import 'dart:io';
 
-import "package:args/args.dart";
+import 'package:args/args.dart';
 
-const playlistInternalPrefixIdent = "[CIDENT]";
+import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
+    as cmdSplitArgs;
+
+@Deprecated(
+    "Will be removed once we change --output to --print, eliminating weird Unicode replacement characters to mitigate Windows' forbidden characters on file names")
+const playlistInternalPrefixIdent = '[CIDENT]';
+@Deprecated(
+    "Will be removed once we change --output to --print, eliminating weird Unicode replacement characters to mitigate Windows' forbidden characters on file names")
 const playlistInternalSplitTarget =
-    " () "; // The leading and trailing whitespace is intentional!
+    ' () '; // The leading and trailing whitespace is intentional!
+
+// Do NOT alter the <cookie_file> and/or <playlist_id> hardcoded string.
+// I am a dumbass
+// https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/
+/// The template for the command used to fetch information about videos in a playlist
+const fetchVideoDataCmd =
+    'yt-dlp --simulate --no-flat-playlist --no-mark-watched --print "%(.{title,id,description,uploader,upload_date})j" --restrict-filenames --windows-filenames --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
+
+class VideoInPlaylist {
+  final String name;
+  final String id;
+  final String description;
+  final String uploaderName;
+  final String uploadedDateUTCStr;
+
+  VideoInPlaylist(this.name, this.id, this.description, this.uploaderName,
+      this.uploadedDateUTCStr);
+
+  VideoInPlaylist.fromJson(Map<String, dynamic> json)
+      : name = json['name'],
+        id = json['id'],
+        description = json['description'],
+        uploaderName = json['uploaderName'],
+        uploadedDateUTCStr = json['uploadedDateUTCStr'];
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'id': id,
+        'description': description,
+        'uploaderName': uploaderName,
+        'uploadedDateUTCStr': uploadedDateUTCStr
+      };
+}
 
 void main(List<String> arguments) async {
   final argParser = ArgParser();
-  argParser.addOption("cookiefile",
-      abbr: "c", help: "The path to the YouTube cookie file", mandatory: true);
-  argParser.addOption("playlistid",
-      abbr: "p", help: "The target YouTube playlist ID", mandatory: true);
+  argParser.addOption('cookie_file',
+      abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true);
+  argParser.addOption('playlist_id',
+      abbr: 'p', help: 'The target YouTube playlist ID', mandatory: true);
 
+  // No idea what is it for Unix systems
   if (Platform.isWindows) {
-    if (Process.runSync("where", ["yt-dlp"]).exitCode != 0) {
+    if ((await Process.run('where', ['yt-dlp'])).exitCode != 0) {
       throw Exception(
-          "Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH");
+          'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
     }
   }
 
   final parsedArgs = argParser.parse(arguments);
 
-  if ((parsedArgs.option("cookiefile") ?? "").isEmpty) {
-    throw Exception("\"cookiefile\" argument not specified or empty");
-  }
-  if ((parsedArgs.option("playlistid") ?? "").isEmpty) {
-    throw Exception("\"playlistid\" argument not specified or empty");
-  }
+  final cookieFile = parsedArgs.option('cookie_file') ?? '';
+  final playlistId = parsedArgs.option('playlist_id') ?? '';
 
-  final cookieFile = parsedArgs.option("cookiefile")!;
-  final playlistID = parsedArgs.option("playlistid")!;
+  if (cookieFile.isEmpty) {
+    throw Exception('"cookie_file" argument not specified or empty');
+  }
+  if (playlistId.isEmpty) {
+    throw Exception('"playlist_id" argument not specified or empty');
+  }
 
   if (!await File(cookieFile).exists()) {
-    throw Exception("Invalid cookie path given");
+    throw Exception('Invalid cookie path given');
   }
 
-  final playlistInfoProc = await Process.start("yt-dlp", [
-    "--simulate",
-    "--no-flat-playlist",
-    "--no-mark-watched",
-    "--output",
-    "$playlistInternalPrefixIdent%(title)s$playlistInternalSplitTarget%(id)s",
-    "--get-filename",
-    "--retries",
-    "999",
-    "--fragment-retries",
-    "999",
-    "--extractor-retries",
-    "0",
-    "--cookies",
+  final devFVD = await Process.start(
+      'yt-dlp',
+      cmdSplitArgs.split(fetchVideoDataCmd
+          .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
+          .replaceAll(RegExp(r'<playlist_id>'), playlistId))
+        ..removeAt(0));
+
+  /*print(cmdSplitArgs.split(
+      'yt-dlp --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --sub-lang "en.*" --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt" "https://www.youtube.com/watch?v=TXgYLmN6m1U"'));*/
+
+  /*final playlistInfoProc = await Process.start('yt-dlp', [
+    '--simulate',
+    '--no-flat-playlist',
+    '--no-mark-watched',
+    '--output',
+    '$playlistInternalPrefixIdent%(title)s$playlistInternalSplitTarget%(id)s$playlistInternalSplitTarget%(description)s$playlistInternalSplitTarget%(uploader)s$playlistInternalSplitTarget%(upload_date)s',
+    '--get-filename',
+    '--retries',
+    '999',
+    '--fragment-retries',
+    '999',
+    '--extractor-retries',
+    '0',
+    '--cookies',
     cookieFile,
-    "https://www.youtube.com/playlist?list=$playlistID"
+    'https://www.youtube.com/playlist?list=$playlistID'
   ]);
 
+  final videosToDownload = <VideoInPlaylist>[];
+
   playlistInfoProc.stderr
-      .forEach((e) => print("stderr : ${String.fromCharCodes(e)}"));
+      .forEach((e) => print('stderr : ${String.fromCharCodes(e)}'));
 
   playlistInfoProc.stdout.forEach((tmp) {
     String str = String.fromCharCodes(tmp);
@@ -63,12 +117,32 @@ void main(List<String> arguments) async {
     if (!str.startsWith(playlistInternalPrefixIdent)) return;
 
     final filter = playlistInternalPrefixIdent
-        .replaceFirst(RegExp(r"\["), r"\[")
-        .replaceFirst(RegExp(r"\]"), r"\]");
-    str = str.replaceAll(RegExp(filter), "");
+        .replaceFirst(RegExp(r'\['), r'\[')
+        .replaceFirst(RegExp(r'\]'), r'\]');
+    str = str.replaceAll(RegExp(filter), '');
 
-    print("stdout : $str");
+    final res =
+        str.split(playlistInternalSplitTarget).map((e) => e.trim()).toList();
+
+    videosToDownload
+        .add(VideoInPlaylist(res[0], res[1], res[2], res[3], res[4]));
+
+    print('stdout : $str');
   });
 
   await playlistInfoProc.exitCode;
+
+  final videosToDownloadFile =
+      File('C:\\Users\\testnow720\\Desktop\\notimeforthisshit.json');
+
+  videosToDownloadFile.writeAsString(jsonEncode({'res': videosToDownload}));*/
+
+  /*final videosToDownload =
+      File('C:\\Users\\testnow720\\Desktop\\notimeforthisshit.json');*/
+
+  // yt-dlp --format 'bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]' --embed-subs --embed-thumbnail --sub-lang 'en,en-orig' --merge-output-format mp4 --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies 'C:\Users\testnow720\Downloads\cookies-youtube-com.txt' 'https://www.youtube.com/watch?v=1y7fZ_WtUGE'
+
+  // TEST :
+  // yt-dlp --format 'bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]' --embed-subs --embed-thumbnail --sub-lang 'en,en-orig' --merge-output-format mp4 --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies 'C:\Users\testnow720\Downloads\cookies-youtube-com.txt' 'https://www.youtube.com/watch?v=HBCYHb58jQc'
+  // This video does NOT have the av01 encoding available
 }
