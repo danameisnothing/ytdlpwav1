@@ -4,7 +4,7 @@ import 'package:chalkdart/chalk.dart';
 
 import 'package:ytdlpwav1/simpleutils/simpleutils.dart';
 
-// Based off of the progressbar2 package
+// Based off of the progressbar2 package (https://pub.dev/packages/progressbar2)
 class ProgressBar {
   static final String innerProgressBarIdent = '<innerprogressbar>';
 
@@ -86,6 +86,7 @@ class ProgressBar {
             : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
 
     stdout.write('\r');
+    // FIXME: THIS LOGIC IS STILL FLAWED. IT DOES NOT ADDRESS THE CORE ISSUE THAT THE USER COULD JUST INJECT ARBITRARY ANSI COLOR CODES AND MODIFY THE LENGTH OF THE STRING!
     stdout.write(str
         .replaceAll(RegExp(activeCharacter), _activeCol(activeCharacter))
         .replaceFirst(RegExp(activeLeadingCharacter),

@@ -1,22 +1,28 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:args/args.dart';
-
 import 'package:chalkdart/chalk.dart';
+import 'package:chalkdart/chalk_x11.dart';
+import 'package:cli_spin/cli_spin.dart';
 
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
     as cmdSplitArgs;
 import 'package:ytdlpwav1/simpleutils/simpleutils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
-// Do NOT alter the <cookie_file> and/or <playlist_id> hardcoded string.
-// I am a dumbass
-// https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/
+// Do NOT alter the <cookie_file> and/or <playlist_id> hardcoded strings.
+// https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/ (I am a dumbass)
 /// The template for the command used to fetch information about videos in a playlist
 const fetchVideoDataCmd =
     'yt-dlp --simulate --no-flat-playlist --no-mark-watched --print "%(.{title,id,description,uploader,upload_date})j" --restrict-filenames --windows-filenames --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
+
+// https://github.com/yt-dlp/yt-dlp/issues/8562
+/// The template for the command used to fetch how many videos in a playlist
+const fetchPlaylistItemCount =
+    'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
 
 class VideoInPlaylist {
   final String name;
@@ -44,41 +50,81 @@ class VideoInPlaylist {
       };
 }
 
+Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
+  final playlistItemCountCmd = cmdSplitArgs.split(fetchPlaylistItemCount
+      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
+      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
+  final picProc = await Process.start(
+      playlistItemCountCmd.removeAt(0), playlistItemCountCmd);
+
+  // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
+  final stderrBroadcast = picProc.stderr.asBroadcastStream();
+  final stdoutBroadcast = picProc.stdout.asBroadcastStream();
+
+  if (await picProc.exitCode != 0) {
+    throw Exception('An unknown error occured while fetching video lists');
+  }
+
+  final playlistItemData = jsonDecode(String.fromCharCodes(await stdoutBroadcast
+      .first)); // Wait for the process to spit an output. With this command, this ALWAYS prints first
+
+  // TODO: SET UP LOGGING FOR THIS PROCESS!
+
+  return playlistItemData["playlist_count"]! as int;
+}
+
 Future fetchVideos(String cookieFile, String playlistId) async {
-  /*final devFVD = await Process.start(
-      'yt-dlp',
-      cmdSplitArgs.split(fetchVideoDataCmd
-          .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-          .replaceAll(RegExp(r'<playlist_id>'), playlistId))
-        ..removeAt(0));
+  final spinnerProcessLaunching =
+      CliSpin(spinner: CliSpinners.dots, hideCursor: false);
 
-  devFVD.stderr.forEach((e) => print('STDERR : ${String.fromCharCodes(e)}'));
-  devFVD.stdout.forEach((e) => print('STDOUT : ${String.fromCharCodes(e)}'));
+  spinnerProcessLaunching.start('Waiting for yt-dlp output');
+  final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
+  spinnerProcessLaunching.stop();
 
-  if (await devFVD.exitCode != 0) throw Exception('');*/
+  final playlistFetchInfoProgress = ProgressBar(
+      top: playlistQuantity,
+      innerWidth: 64,
+      activeColor: chalk.brightGreen,
+      activeLeadingColor: chalk.brightGreen);
+
+  final videoDataCmd = cmdSplitArgs.split(fetchVideoDataCmd
+      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
+      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
+  final picProc = await Process.start(videoDataCmd.removeAt(0), videoDataCmd);
+
+  final stopwatch = Stopwatch()..start();
+
+  // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
+  final stderrBroadcast = picProc.stderr.asBroadcastStream();
+  final stdoutBroadcast = picProc.stdout.asBroadcastStream();
+
+  final timer = Timer.periodic(Duration(milliseconds: 100), (_) {
+    playlistFetchInfoProgress.renderInLine((total, current) {
+      final percStr = chalk.brightCyan(
+          '${(((current / total) * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
+      final partStr =
+          chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
+      final stopwatchStr = chalk.darkTurquoise(
+          "Running for ${stopwatch.elapsedMilliseconds / 1000}s");
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr';
+    });
+  });
+
+  stdoutBroadcast.forEach((e) {
+    final norm = String.fromCharCodes(e);
+    playlistFetchInfoProgress.increment();
+  });
+
+  if (await picProc.exitCode != 0) {
+    throw Exception('An unknown error occured while fetching video lists');
+  }
+
+  stopwatch.stop();
+
+  timer.cancel();
 
   /*final e = ProgressBar(
-      formatter: (current, total, progress, elapsedTime) {
-        final percStr = chalk.brightCyan(
-            '${((progress * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
-        final partStr = chalk.brightMagenta('$current/$total');
-        print(ProgressBar.formatterBarToken);
-        return '[${ProgressBar.formatterBarToken.replaceFirst(RegExp(r' '), ">")}] · $percStr · $partStr · ${chalk.brightBlue('Running for ${elapsedTime.inMilliseconds / 1000}s')}';
-      },
-      total: 100,
-      completeChar: chalk.brightGreen('='),
-      incompleteChar: ' ',
-      width: 30);
-
-  for (var i = 0; i < 100; i++) {
-    e.render();
-    e.value += 1;
-    e.render();
-    await Future.delayed(const Duration(milliseconds: 10));
-  }*/
-
-  final e = ProgressBar(
-      top: 69.420,
+      top: 69,
       innerWidth: 64,
       activeColor: chalk.brightGreen,
       activeLeadingColor: chalk.brightGreen,
@@ -93,10 +139,10 @@ Future fetchVideos(String cookieFile, String playlistId) async {
     await e.renderInLine();
     e.increment(Random().nextDouble());
     await Future.delayed(const Duration(milliseconds: 1));
-    await e.renderInLine();
+    await e.renderInLine()
   }
 
-  await e.finishRender();
+  await e.finishRender();*/
 }
 
 void main(List<String> arguments) async {
