@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:args/args.dart';
 
@@ -77,8 +78,8 @@ Future fetchVideos(String cookieFile, String playlistId) async {
   }*/
 
   final e = ProgressBar(
-      top: 100,
-      innerWidth: 30,
+      top: 69.420,
+      innerWidth: 64,
       activeColor: chalk.brightGreen,
       activeLeadingColor: chalk.brightGreen,
       renderFunc: (total, current) {
@@ -88,18 +89,14 @@ Future fetchVideos(String cookieFile, String playlistId) async {
         return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr';
       });
 
-  for (var i = 0; i < 100; i++) {
+  while (e.progress < e.top) {
     await e.renderInLine();
-    e.increment();
-    await Future.delayed(const Duration(milliseconds: 10));
+    e.increment(Random().nextDouble());
+    await Future.delayed(const Duration(milliseconds: 1));
+    await e.renderInLine();
   }
-  e.increment();
-  await e.renderInLine();
 
-  print('hell');
-  print('hell');
-  print('hell');
-  print('hell');
+  await e.finishRender();
 }
 
 void main(List<String> arguments) async {
