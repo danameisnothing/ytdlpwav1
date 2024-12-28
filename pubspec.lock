@@ -31,7 +31,7 @@ packages:
     source: hosted
     version: "0.1.2"
   ansi_strip:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: ansi_strip
       sha256: "9bb54e10962ac1de86b9b64a278a5b8965a28a2f741975eac7fe9fb0ebe1aaac"

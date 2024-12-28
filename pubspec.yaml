@@ -8,6 +8,7 @@ environment:
 
 # Add regular dependencies here.
 dependencies:
+  ansi_strip: ^0.1.1+1
   args: ^2.5.0
   chalkdart: ^2.2.1
   cli_spin: ^1.0.1

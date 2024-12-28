@@ -62,7 +62,7 @@ Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
   final stdoutBroadcast = picProc.stdout.asBroadcastStream();
 
   if (await picProc.exitCode != 0) {
-    throw Exception('An unknown error occured while fetching video lists');
+    await hardExit('An unknown error occured while fetching video lists');
   }
 
   final playlistItemData = jsonDecode(String.fromCharCodes(await stdoutBroadcast
@@ -116,7 +116,7 @@ Future fetchVideos(String cookieFile, String playlistId) async {
   });
 
   if (await picProc.exitCode != 0) {
-    throw Exception('An unknown error occured while fetching video lists');
+    await hardExit('An unknown error occured while fetching video lists');
   }
 
   stopwatch.stop();
@@ -156,7 +156,7 @@ void main(List<String> arguments) async {
   // TODO: Figure out for Unix systems
   if (Platform.isWindows) {
     if ((await Process.run('where', ['yt-dlp'])).exitCode != 0) {
-      throw Exception(
+      await hardExit(
           'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
     }
   }
@@ -167,11 +167,11 @@ void main(List<String> arguments) async {
   final playlistId = parsedArgs.option('playlist_id');
 
   if (cookieFile.isEmpty) {
-    throw Exception('"cookie_file" argument not specified or empty');
+    await hardExit('"cookie_file" argument not specified or empty');
   }
 
   if (!await File(cookieFile).exists()) {
-    throw Exception('Invalid cookie path given');
+    await hardExit('Invalid cookie path given');
   }
 
   if (playlistId != null) {
