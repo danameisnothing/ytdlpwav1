@@ -10,14 +10,14 @@ import 'package:logging/logging.dart';
 
 import 'package:ytdlpwav1/app_preferences/app_preferences.dart';
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
-    as cmdSplitArgs;
+    as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
 // Do NOT alter the <cookie_file> and/or <playlist_id> hardcoded strings.
 // https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/ (I am a dumbass)
 /// The template for the command used to fetch information about videos in a playlist
-const fetchVideoDataCmd =
+const fetchVideoInfosCmd =
     'yt-dlp --simulate --no-flat-playlist --no-mark-watched --print "%(.{title,id,description,uploader,upload_date})j" --restrict-filenames --windows-filenames --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
 // https://github.com/yt-dlp/yt-dlp/issues/8562
 /// The template for the command used to fetch how many videos in a playlist
@@ -25,51 +25,8 @@ const fetchPlaylistItemCount =
     'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
 const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
 
-// wtf
-Future<String?> procAwaitFirstOutputHack(Stream<List<int>> stream) async {
-  final completer = Completer<String?>();
-  // This piece of logic is equal to await stdoutBroadcast.first
-  late final String data;
-  var tmpListener = stream.listen((e) => 0);
-  tmpListener.onData((e) {
-    data = String.fromCharCodes(e);
-    tmpListener.cancel();
-    completer.complete(data);
-  });
-
-  if (await stream.isEmpty) completer.complete();
-
-  return completer.future;
-}
-
-/*class VideoInPlaylist {
-  final String name;
-  final String id;
-  final String description;
-  final String uploaderName;
-  final String uploadedDateUTCStr;
-
-  VideoInPlaylist(this.name, this.id, this.description, this.uploaderName,
-      this.uploadedDateUTCStr);
-
-  VideoInPlaylist.fromJson(Map<String, dynamic> json)
-      : name = json['name'],
-        id = json['id'],
-        description = json['description'],
-        uploaderName = json['uploaderName'],
-        uploadedDateUTCStr = json['uploadedDateUTCStr'];
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'id': id,
-        'description': description,
-        'uploaderName': uploaderName,
-        'uploadedDateUTCStr': uploadedDateUTCStr
-      };
-}*/
-
 Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
-  final playlistItemCountCmd = cmdSplitArgs.split(fetchPlaylistItemCount
+  final playlistItemCountCmd = cmd_split_args.split(fetchPlaylistItemCount
       .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
       .replaceAll(RegExp(r'<playlist_id>'), playlistId));
   settings.logger.fine(
@@ -93,6 +50,42 @@ Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
       as int; // Data can't be null because of the exitCode check
 }
 
+Stream<VideoInPlaylist> getPlaylistVideoInfos(
+    String cookieFile, String playlistId) async* {
+  final videoInfosCmd = cmd_split_args.split(fetchVideoInfosCmd
+      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
+      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
+  settings.logger.fine(
+      'Starting yt-dlp process for fetching video informations using argument $videoInfosCmd');
+  final picProc = await Process.start(videoInfosCmd.removeAt(0), videoInfosCmd);
+
+  final broadcastStreams =
+      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
+
+  await for (final e in broadcastStreams["stdout"]!) {
+    final data = jsonDecode(String.fromCharCodes(e));
+
+    final uploadDate = data["upload_date"] as String;
+    final parsed = VideoInPlaylist(
+        data["title"],
+        data["id"],
+        data["description"],
+        data["uploader"],
+        DateTime(
+          int.parse(uploadDate.substring(0, 4)),
+          int.parse(uploadDate.substring(4, 6)),
+          int.parse(uploadDate.substring(6, 8)),
+        ));
+    settings.logger.fine('Got update on stdout, parsed as $parsed');
+    yield parsed;
+  }
+
+  if (await picProc.exitCode != 0) {
+    hardExit(
+        'An error occured while fetching video infos. Use the --verbose flag to see more details');
+  }
+}
+
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final spinnerProcessLaunching = CliSpin(spinner: CliSpinners.dots);
 
@@ -100,50 +93,40 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
   spinnerProcessLaunching.stop();
 
+  settings.logger.info('Fetched video quantity in playlist');
+
   final playlistFetchInfoProgress =
       ProgressBar(top: playlistQuantity, innerWidth: 32);
-
-  final videoDataCmd = cmdSplitArgs.split(fetchVideoDataCmd
-      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
-  settings.logger.fine(
-      'Starting yt-dlp process for fetching video informations using argument $videoDataCmd');
-  final picProc = await Process.start(videoDataCmd.removeAt(0), videoDataCmd);
-
-  final broadcastStreams =
-      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
 
   final stopwatch = Stopwatch()..start();
 
   final timer = Timer.periodic(Duration(milliseconds: 10), (_) {
     playlistFetchInfoProgress.renderInLine((total, current) {
+      final normTime = stopwatch.elapsedMilliseconds / 1000;
+
       final percStr = chalk.brightCyan(
           '${(((current / total) * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
       final partStr =
           chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
-      final stopwatchStr = chalk.darkTurquoise(
-          'Running for ${stopwatch.elapsedMilliseconds / 1000}s');
-      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr';
+      final stopwatchStr =
+          chalk.darkTurquoise('Running for ${normTime.toStringAsFixed(3)}s');
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr'; // TODO: ADD ETA LOGIC!
     });
   });
 
-  broadcastStreams['stdout']!.forEach((e) {
-    final data = String.fromCharCodes(e);
-    playlistFetchInfoProgress.increment();
-    settings.logger.fine('Got $data on stdout');
-  });
+  final videoInfos = <VideoInPlaylist>[];
 
-  if (await picProc.exitCode != 0) {
-    hardExit(
-        'An error occured while fetching video infos. Use the --verbose flag to see more details');
+  final res = getPlaylistVideoInfos(cookieFile, playlistId);
+  await for (final e in res) {
+    videoInfos.add(e);
+    playlistFetchInfoProgress.increment();
   }
 
   stopwatch.stop();
+  timer.cancel();
   await playlistFetchInfoProgress.finishRender();
 
-  settings.logger.fine('End result is TODOTODO!');
-
-  timer.cancel();
+  settings.logger.fine('End result is $videoInfos');
 }
 
 void main(List<String> arguments) async {

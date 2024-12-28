@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:ansi_strip/ansi_strip.dart';
 import 'package:chalkdart/chalk.dart';
@@ -54,7 +55,7 @@ class ProgressBar {
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
     try {
       // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
-      final topIsDouble = _top is double;
+      /*final topIsDouble = _top is double;
       final curIsDouble = _current is double;
       final onePartCompHasDecimal = topIsDouble || curIsDouble;
 
@@ -62,7 +63,22 @@ class ProgressBar {
           (topIsDouble && onePartCompHasDecimal) ? _top : (_top * 10) / 10;
       final curArg = (curIsDouble && onePartCompHasDecimal)
           ? _current
-          : (_current * 10) / 10;
+          : (_current * 10) / 10;*/
+
+      // Hopefully there are no unforseen consequences with this approach
+      final topFractStr = _top
+          .toString()
+          .replaceFirst(RegExp(_top.truncate().toString()), '')
+          .substring(1);
+      final curFractStr = _current
+          .toString()
+          .replaceFirst(RegExp(_current.truncate().toString()), '')
+          .substring(1);
+
+      final topPassed = double.parse(
+          _top.toStringAsFixed(max(topFractStr.length, curFractStr.length)));
+      final curPassed = double.parse(_current
+          .toStringAsFixed(max(topFractStr.length, curFractStr.length)));
 
       late String str;
       if (renderFuncIn == null) {
@@ -70,9 +86,9 @@ class ProgressBar {
           throw Exception(
               'Override function not given in constructor and function');
         }
-        str = _renderFunc(topArg, curArg);
+        str = _renderFunc(topPassed, curPassed);
       } else {
-        str = renderFuncIn(topArg, curArg);
+        str = renderFuncIn(topPassed, curPassed);
       }
 
       str = str.replaceFirst(
