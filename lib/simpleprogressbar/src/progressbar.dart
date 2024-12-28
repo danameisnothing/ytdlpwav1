@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:ansi_strip/ansi_strip.dart';
 import 'package:chalkdart/chalk.dart';
 
-import 'package:ytdlpwav1/simpleutils/simpleutils.dart';
+import 'package:ytdlpwav1/app_utils/app_utils.dart';
 
 // Based off of the progressbar2 package (https://pub.dev/packages/progressbar2)
 class ProgressBar {
@@ -52,38 +52,41 @@ class ProgressBar {
   }
 
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
-    // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
-    final topIsDouble = _top is double;
-    final curIsDouble = _current is double;
-    final onePartCompHasDecimal = topIsDouble || curIsDouble;
+    try {
+      // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
+      final topIsDouble = _top is double;
+      final curIsDouble = _current is double;
+      final onePartCompHasDecimal = topIsDouble || curIsDouble;
 
-    final topArg =
-        (topIsDouble && onePartCompHasDecimal) ? _top : (_top * 10) / 10;
-    final curArg = (curIsDouble && onePartCompHasDecimal)
-        ? _current
-        : (_current * 10) / 10;
+      final topArg =
+          (topIsDouble && onePartCompHasDecimal) ? _top : (_top * 10) / 10;
+      final curArg = (curIsDouble && onePartCompHasDecimal)
+          ? _current
+          : (_current * 10) / 10;
 
-    late String str;
-    if (renderFuncIn == null) {
-      if (_renderFunc == null) {
-        throw Exception(
-            'Override function not given in constructor and function');
+      late String str;
+      if (renderFuncIn == null) {
+        if (_renderFunc == null) {
+          throw Exception(
+              'Override function not given in constructor and function');
+        }
+        str = _renderFunc(topArg, curArg);
+      } else {
+        str = renderFuncIn(topArg, curArg);
       }
-      str = _renderFunc(topArg, curArg);
-    } else {
-      str = renderFuncIn(topArg, curArg);
+
+      str = str.replaceFirst(
+          RegExp(innerProgressBarIdent),
+          (_innerProgressBarOverrideFunc == null)
+              ? generateInnerProgressBarDefault(_current, _top, _innerWidth)
+              : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
+
+      stdout.write(
+          '\r$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
+      await stdout.flush();
+    } catch (_) {
+      // Error may be us not having enough space to print the base message
     }
-
-    str = str.replaceFirst(
-        RegExp(innerProgressBarIdent),
-        (_innerProgressBarOverrideFunc == null)
-            ? generateInnerProgressBarDefault(_current, _top, _innerWidth)
-            : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
-
-    stdout.write('\r');
-    stdout.write(
-        '$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
-    await stdout.flush();
   }
 
   Future finishRender() async {

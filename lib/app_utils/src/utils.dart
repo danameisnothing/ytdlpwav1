@@ -1,18 +1,13 @@
 import 'dart:io';
 
-import 'package:chalkdart/chalk.dart';
+import 'package:ytdlpwav1/app_preferences/app_preferences.dart';
 
 // From Processing's map() function code
 double map(num value, num istart, num istop, num ostart, num ostop) {
   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
 
-Future printErr(Object? obj) async {
-  stderr.writeln('${chalk.brightRed('[ERROR]')} $obj');
-  await stderr.flush();
-}
-
-Future hardExit(String msg) async {
-  await printErr(msg);
+void hardExit(String msg) {
+  settings.logger.severe(msg);
   exit(1);
 }

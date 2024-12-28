@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:chalkdart/chalk_x11.dart';
 import 'package:cli_spin/cli_spin.dart';
+import 'package:logging/logging.dart';
 
+import 'package:ytdlpwav1/app_preferences/app_preferences.dart';
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
     as cmdSplitArgs;
-import 'package:ytdlpwav1/simpleutils/simpleutils.dart';
+import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
 // Do NOT alter the <cookie_file> and/or <playlist_id> hardcoded strings.
@@ -18,15 +19,30 @@ import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 /// The template for the command used to fetch information about videos in a playlist
 const fetchVideoDataCmd =
     'yt-dlp --simulate --no-flat-playlist --no-mark-watched --print "%(.{title,id,description,uploader,upload_date})j" --restrict-filenames --windows-filenames --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
-
 // https://github.com/yt-dlp/yt-dlp/issues/8562
 /// The template for the command used to fetch how many videos in a playlist
 const fetchPlaylistItemCount =
     'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
+const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
 
-bool verbose = false;
+// wtf
+Future<String?> procAwaitFirstOutputHack(Stream<List<int>> stream) async {
+  final completer = Completer<String?>();
+  // This piece of logic is equal to await stdoutBroadcast.first
+  late final String data;
+  var tmpListener = stream.listen((e) => 0);
+  tmpListener.onData((e) {
+    data = String.fromCharCodes(e);
+    tmpListener.cancel();
+    completer.complete(data);
+  });
 
-class VideoInPlaylist {
+  if (await stream.isEmpty) completer.complete();
+
+  return completer.future;
+}
+
+/*class VideoInPlaylist {
   final String name;
   final String id;
   final String description;
@@ -50,52 +66,54 @@ class VideoInPlaylist {
         'uploaderName': uploaderName,
         'uploadedDateUTCStr': uploadedDateUTCStr
       };
-}
+}*/
 
 Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
   final playlistItemCountCmd = cmdSplitArgs.split(fetchPlaylistItemCount
       .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
       .replaceAll(RegExp(r'<playlist_id>'), playlistId));
+  settings.logger.fine(
+      'Starting yt-dlp process for fetching playlist quantity using argument $playlistItemCountCmd');
   final picProc = await Process.start(
       playlistItemCountCmd.removeAt(0), playlistItemCountCmd);
 
-  // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
-  final stderrBroadcast = picProc.stderr.asBroadcastStream();
-  final stdoutBroadcast = picProc.stdout.asBroadcastStream();
+  final broadcastStreams =
+      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
+
+  final data = await procAwaitFirstOutputHack(broadcastStreams['stdout']!);
 
   if (await picProc.exitCode != 0) {
-    await hardExit('An unknown error occured while fetching video lists');
+    hardExit(
+        'An error occured while fetching playlist quantity. Use the --verbose flag to see more details');
   }
 
-  final playlistItemData = jsonDecode(String.fromCharCodes(await stdoutBroadcast
-      .first)); // Wait for the process to spit an output. With this command, this ALWAYS prints first
+  settings.logger.fine('Got $data on playlist count');
 
-  // TODO: SET UP LOGGING FOR THIS PROCESS!
-
-  return playlistItemData["playlist_count"]! as int;
+  return jsonDecode(data!)['playlist_count']!
+      as int; // Data can't be null because of the exitCode check
 }
 
-Future fetchVideos(String cookieFile, String playlistId) async {
-  final spinnerProcessLaunching =
-      CliSpin(spinner: CliSpinners.dots, hideCursor: false);
+Future fetchVideosLogic(String cookieFile, String playlistId) async {
+  final spinnerProcessLaunching = CliSpin(spinner: CliSpinners.dots);
 
   spinnerProcessLaunching.start('Waiting for yt-dlp output');
   final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
   spinnerProcessLaunching.stop();
 
   final playlistFetchInfoProgress =
-      ProgressBar(top: playlistQuantity, innerWidth: 64);
+      ProgressBar(top: playlistQuantity, innerWidth: 32);
 
   final videoDataCmd = cmdSplitArgs.split(fetchVideoDataCmd
       .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
       .replaceAll(RegExp(r'<playlist_id>'), playlistId));
+  settings.logger.fine(
+      'Starting yt-dlp process for fetching video informations using argument $videoDataCmd');
   final picProc = await Process.start(videoDataCmd.removeAt(0), videoDataCmd);
 
-  final stopwatch = Stopwatch()..start();
+  final broadcastStreams =
+      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
 
-  // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
-  final stderrBroadcast = picProc.stderr.asBroadcastStream();
-  final stdoutBroadcast = picProc.stdout.asBroadcastStream();
+  final stopwatch = Stopwatch()..start();
 
   final timer = Timer.periodic(Duration(milliseconds: 10), (_) {
     playlistFetchInfoProgress.renderInLine((total, current) {
@@ -104,79 +122,101 @@ Future fetchVideos(String cookieFile, String playlistId) async {
       final partStr =
           chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
       final stopwatchStr = chalk.darkTurquoise(
-          "Running for ${stopwatch.elapsedMilliseconds / 1000}s");
+          'Running for ${stopwatch.elapsedMilliseconds / 1000}s');
       return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr';
     });
   });
 
-  stdoutBroadcast.forEach((e) {
-    final norm = String.fromCharCodes(e);
+  broadcastStreams['stdout']!.forEach((e) {
+    final data = String.fromCharCodes(e);
     playlistFetchInfoProgress.increment();
+    settings.logger.fine('Got $data on stdout');
   });
 
   if (await picProc.exitCode != 0) {
-    await hardExit('An unknown error occured while fetching video lists');
+    hardExit(
+        'An error occured while fetching video infos. Use the --verbose flag to see more details');
   }
 
   stopwatch.stop();
   await playlistFetchInfoProgress.finishRender();
 
+  settings.logger.fine('End result is TODOTODO!');
+
   timer.cancel();
-
-  /*final e = ProgressBar(
-      top: 69,
-      innerWidth: 64,
-      activeColor: chalk.brightGreen,
-      activeLeadingColor: chalk.brightGreen,
-      renderFunc: (total, current) {
-        final percStr = chalk.brightCyan(
-            '${(((current / total) * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
-        final partStr = chalk.brightMagenta('$current/$total');
-        return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr';
-      });
-
-  while (e.progress < e.top) {
-    await e.renderInLine();
-    e.increment(Random().nextDouble());
-    await Future.delayed(const Duration(milliseconds: 1));
-    await e.renderInLine()
-  }
-
-  await e.finishRender();*/
 }
 
 void main(List<String> arguments) async {
+  settings.logger = Logger('piss');
+  Logger.root.onRecord.listen((rec) {
+    String levelName = '[${rec.level.name}]';
+    switch (rec.level) {
+      case Level.INFO:
+        levelName = chalk.grey(levelName);
+        break;
+      case Level.WARNING:
+        levelName = chalk.yellowBright(levelName);
+        break;
+      case Level.SEVERE:
+        levelName = chalk.redBright('[ERROR]');
+        break;
+    }
+    if (rec.level == Level.FINE) {
+      final logFile =
+          File(verboseLogFileName); // Guaranteed to exist at this point
+      logFile.writeAsStringSync(
+          '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
+          flush: true,
+          mode: FileMode.append);
+      return;
+    }
+    print('$levelName ${rec.message}');
+  });
+  Logger.root.level = Level.INFO;
+
   final argParser = ArgParser();
   argParser.addOption('cookie_file',
       abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true);
   argParser.addOption('playlist_id',
       abbr: 'p', help: 'The target YouTube playlist ID', mandatory: false);
-  argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
-
-  // No idea what is it for Unix systems
-  // TODO: Figure out for Unix systems
-  if (Platform.isWindows) {
-    if ((await Process.run('where', ['yt-dlp'])).exitCode != 0) {
-      await hardExit(
-          'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
-    }
-  }
+  argParser.addFlag('verbose',
+      abbr: 'v', help: 'Logs verbose output on a file');
 
   final parsedArgs = argParser.parse(arguments);
+
+  if (parsedArgs.flag('verbose')) {
+    Logger.root.level = Level.ALL;
+    final logFile = File(verboseLogFileName);
+    if (!await logFile.exists()) {
+      await logFile.create();
+    } else {
+      logFile.writeAsStringSync('',
+          flush: true, mode: FileMode.write); // Overwrite with nothing
+    }
+  }
 
   final cookieFile = parsedArgs.option('cookie_file') ?? '';
   final playlistId = parsedArgs.option('playlist_id');
 
   if (cookieFile.isEmpty) {
-    await hardExit('"cookie_file" argument not specified or empty');
+    hardExit('"cookie_file" argument not specified or empty');
   }
 
   if (!await File(cookieFile).exists()) {
-    await hardExit('Invalid cookie path given');
+    hardExit('Invalid cookie path given');
+  }
+
+  // No idea what is it for Unix systems
+  // TODO: Figure out for Unix systems
+  if (Platform.isWindows) {
+    if ((await Process.run('where', ['yt-dlp'])).exitCode != 0) {
+      hardExit(
+          'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
+    }
   }
 
   if (playlistId != null) {
-    await fetchVideos(cookieFile, playlistId);
+    await fetchVideosLogic(cookieFile, playlistId);
   }
 
   /*print(cmdSplitArgs.split(
