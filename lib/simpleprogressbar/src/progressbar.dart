@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:ansi_strip/ansi_strip.dart';
 import 'package:chalkdart/chalk.dart';
 
 import 'package:ytdlpwav1/simpleutils/simpleutils.dart';
@@ -10,9 +11,7 @@ class ProgressBar {
 
   final num _top;
   final int _innerWidth;
-  final Chalk _activeCol;
   final String _activeChar;
-  final Chalk _activeLeadingCol;
   final String _activeLeadingChar;
   final String Function(num, num)? _renderFunc;
   final String Function(num, num, int)? _innerProgressBarOverrideFunc;
@@ -21,17 +20,13 @@ class ProgressBar {
   ProgressBar(
       {num top = 100,
       required int innerWidth,
-      required Chalk activeColor,
       String activeCharacter = '=',
-      required Chalk activeLeadingColor,
       String activeLeadingCharacter = '>',
       String Function(num, num)? renderFunc,
       String Function(num, num, int)? innerProgressBarOverrideFunc})
       : _top = top,
         _innerWidth = innerWidth,
-        _activeCol = activeColor,
         _activeChar = activeCharacter,
-        _activeLeadingCol = activeLeadingColor,
         _activeLeadingChar = activeLeadingCharacter,
         _renderFunc = renderFunc,
         _innerProgressBarOverrideFunc = innerProgressBarOverrideFunc;
@@ -49,11 +44,11 @@ class ProgressBar {
 
   bool isCompleted() => (_current - _top).abs() <= 0.0001;
 
-  String generateInnerProgressBar(num curr, num top, int targetWidth) {
+  String generateInnerProgressBarDefault(num curr, num top, int targetWidth) {
     final activePortionScaled = map(curr, 0, top, 0, targetWidth)
         .floor(); // Amount of space occupied by active sections
-    return '${List.filled(activePortionScaled, _activeChar).join()}${List.filled(map(top, 0, top, 0, targetWidth).floor() - activePortionScaled, ' ').join()}'
-        .replaceFirst(RegExp(r' '), _activeLeadingChar);
+    return '${chalk.brightGreen(List.filled(activePortionScaled, _activeChar).join())}${List.filled(map(top, 0, top, 0, targetWidth).floor() - activePortionScaled, ' ').join()}'
+        .replaceFirst(RegExp(r' '), chalk.brightGreen(_activeLeadingChar));
   }
 
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
@@ -82,17 +77,12 @@ class ProgressBar {
     str = str.replaceFirst(
         RegExp(innerProgressBarIdent),
         (_innerProgressBarOverrideFunc == null)
-            ? generateInnerProgressBar(_current, _top, _innerWidth)
+            ? generateInnerProgressBarDefault(_current, _top, _innerWidth)
             : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
 
     stdout.write('\r');
-    // FIXME: THIS LOGIC IS STILL FLAWED. IT DOES NOT ADDRESS THE CORE ISSUE THAT THE USER COULD JUST INJECT ARBITRARY ANSI COLOR CODES AND MODIFY THE LENGTH OF THE STRING!
-    stdout.write(str
-        .replaceAll(RegExp(activeCharacter), _activeCol(activeCharacter))
-        .replaceFirst(RegExp(activeLeadingCharacter),
-            _activeLeadingCol(activeLeadingCharacter)));
-    stdout.write(List.filled(stdout.terminalColumns - str.length, ' ')
-        .join()); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
+    stdout.write(
+        '$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
     await stdout.flush();
   }
 

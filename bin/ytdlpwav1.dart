@@ -24,6 +24,8 @@ const fetchVideoDataCmd =
 const fetchPlaylistItemCount =
     'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
 
+bool verbose = false;
+
 class VideoInPlaylist {
   final String name;
   final String id;
@@ -81,11 +83,8 @@ Future fetchVideos(String cookieFile, String playlistId) async {
   final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
   spinnerProcessLaunching.stop();
 
-  final playlistFetchInfoProgress = ProgressBar(
-      top: playlistQuantity,
-      innerWidth: 64,
-      activeColor: chalk.brightGreen,
-      activeLeadingColor: chalk.brightGreen);
+  final playlistFetchInfoProgress =
+      ProgressBar(top: playlistQuantity, innerWidth: 64);
 
   final videoDataCmd = cmdSplitArgs.split(fetchVideoDataCmd
       .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
@@ -98,7 +97,7 @@ Future fetchVideos(String cookieFile, String playlistId) async {
   final stderrBroadcast = picProc.stderr.asBroadcastStream();
   final stdoutBroadcast = picProc.stdout.asBroadcastStream();
 
-  final timer = Timer.periodic(Duration(milliseconds: 100), (_) {
+  final timer = Timer.periodic(Duration(milliseconds: 10), (_) {
     playlistFetchInfoProgress.renderInLine((total, current) {
       final percStr = chalk.brightCyan(
           '${(((current / total) * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
@@ -120,6 +119,7 @@ Future fetchVideos(String cookieFile, String playlistId) async {
   }
 
   stopwatch.stop();
+  await playlistFetchInfoProgress.finishRender();
 
   timer.cancel();
 
@@ -151,6 +151,7 @@ void main(List<String> arguments) async {
       abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true);
   argParser.addOption('playlist_id',
       abbr: 'p', help: 'The target YouTube playlist ID', mandatory: false);
+  argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
 
   // No idea what is it for Unix systems
   // TODO: Figure out for Unix systems

@@ -9,7 +9,7 @@
             "name": "ytdlpwav1",
             "request": "launch",
             "type": "dart",
-            "args": ["--cookie_file", "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt", "--playlist_id", "PL0_dwOU2tpNDoU38L91WZ9mIJqsEh5EXH"],
+            "args": ["--cookie_file", "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt", "--playlist_id", "PL0_dwOU2tpNCftx7w4HxFDxkO-edR32za"],
             "console": "terminal"
         }
     ]
