@@ -24,6 +24,7 @@ const fetchVideoInfosCmd =
 const fetchPlaylistItemCount =
     'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
 const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
+const videoDataFileName = 'ytdlpwav1_video_data.json';
 
 Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
   final playlistItemCountCmd = cmd_split_args.split(fetchPlaylistItemCount
@@ -62,15 +63,15 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
   final broadcastStreams =
       implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
 
-  await for (final e in broadcastStreams["stdout"]!) {
+  await for (final e in broadcastStreams['stdout']!) {
     final data = jsonDecode(String.fromCharCodes(e));
 
-    final uploadDate = data["upload_date"] as String;
+    final uploadDate = data['upload_date'] as String;
     final parsed = VideoInPlaylist(
-        data["title"],
-        data["id"],
-        data["description"],
-        data["uploader"],
+        data['title'],
+        data['id'],
+        data['description'],
+        data['uploader'],
         DateTime(
           int.parse(uploadDate.substring(0, 4)),
           int.parse(uploadDate.substring(4, 6)),
@@ -87,6 +88,12 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 }
 
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
+  final videoDataFile = File(videoDataFileName);
+  if (await videoDataFile.exists()) {
+    //print();
+    // TODO:
+  }
+
   final spinnerProcessLaunching = CliSpin(spinner: CliSpinners.dots);
 
   spinnerProcessLaunching.start('Waiting for yt-dlp output');
@@ -100,8 +107,10 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
 
   final stopwatch = Stopwatch()..start();
 
-  final timer = Timer.periodic(Duration(milliseconds: 10), (_) {
-    playlistFetchInfoProgress.renderInLine((total, current) {
+  // Thank you https://www.reddit.com/r/dartlang/comments/t8pcbd/stream_periodic_from_a_future/
+  final periodic =
+      Stream.periodic(Duration(milliseconds: 10)).asyncMap((_) async {
+    await playlistFetchInfoProgress.renderInLine((total, current) {
       final normTime = stopwatch.elapsedMilliseconds / 1000;
 
       final percStr = chalk.brightCyan(
@@ -112,18 +121,18 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
           chalk.darkTurquoise('Running for ${normTime.toStringAsFixed(3)}s');
       return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr'; // TODO: ADD ETA LOGIC!
     });
-  });
+  }).listen((_) => 0);
 
   final videoInfos = <VideoInPlaylist>[];
 
   final res = getPlaylistVideoInfos(cookieFile, playlistId);
-  await for (final e in res) {
-    videoInfos.add(e);
+  await for (final videoInfo in res) {
+    videoInfos.add(videoInfo);
     playlistFetchInfoProgress.increment();
   }
 
   stopwatch.stop();
-  timer.cancel();
+  periodic.cancel();
   await playlistFetchInfoProgress.finishRender();
 
   settings.logger.fine('End result is $videoInfos');

@@ -66,14 +66,18 @@ class ProgressBar {
           : (_current * 10) / 10;*/
 
       // Hopefully there are no unforseen consequences with this approach
-      final topFractStr = _top
-          .toString()
-          .replaceFirst(RegExp(_top.truncate().toString()), '')
-          .substring(1);
-      final curFractStr = _current
-          .toString()
-          .replaceFirst(RegExp(_current.truncate().toString()), '')
-          .substring(1);
+      final topFractStr = (_top.toString().length != 1)
+          ? _top
+              .toString()
+              .replaceFirst(RegExp(_top.truncate().toString()), '')
+              .substring(1)
+          : '';
+      final curFractStr = (_current.toString().length != 1)
+          ? _current
+              .toString()
+              .replaceFirst(RegExp(_current.truncate().toString()), '')
+              .substring(1)
+          : '';
 
       final topPassed = double.parse(
           _top.toStringAsFixed(max(topFractStr.length, curFractStr.length)));
@@ -101,6 +105,7 @@ class ProgressBar {
           '\r$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
       await stdout.flush();
     } catch (_) {
+      //rethrow;
       // Error may be us not having enough space to print the base message
     }
   }
