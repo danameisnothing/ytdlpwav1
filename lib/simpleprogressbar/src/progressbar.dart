@@ -105,7 +105,6 @@ class ProgressBar {
           '\r$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
       await stdout.flush();
     } catch (_) {
-      //rethrow;
       // Error may be us not having enough space to print the base message
     }
   }

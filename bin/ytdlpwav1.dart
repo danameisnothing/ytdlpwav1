@@ -68,15 +68,16 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 
     final uploadDate = data['upload_date'] as String;
     final parsed = VideoInPlaylist(
-        data['title'],
-        data['id'],
-        data['description'],
+      /*data['title'],*/
+      data['id'],
+      /*data['description'],
         data['uploader'],
         DateTime(
           int.parse(uploadDate.substring(0, 4)),
           int.parse(uploadDate.substring(4, 6)),
           int.parse(uploadDate.substring(6, 8)),
-        ));
+        )*/
+    );
     settings.logger.fine('Got update on stdout, parsed as $parsed');
     yield parsed;
   }
@@ -90,9 +91,11 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final videoDataFile = File(videoDataFileName);
   if (await videoDataFile.exists()) {
-    //print();
-    // TODO:
+    hardExit(
+        'File $videoDataFileName already exists. Delete / rename the file and try again, or do not supply the "--playlist_id" option to start downloading videos');
+    // FIXME: actual confirmation prompt to overwrite the file!
   }
+  await videoDataFile.create();
 
   final spinnerProcessLaunching = CliSpin(spinner: CliSpinners.dots);
 
@@ -109,12 +112,12 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
 
   // Thank you https://www.reddit.com/r/dartlang/comments/t8pcbd/stream_periodic_from_a_future/
   final periodic =
-      Stream.periodic(Duration(milliseconds: 10)).asyncMap((_) async {
+      Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
     await playlistFetchInfoProgress.renderInLine((total, current) {
       final normTime = stopwatch.elapsedMilliseconds / 1000;
 
-      final percStr = chalk.brightCyan(
-          '${(((current / total) * 1000).truncate()) / 10}%'); // To have only 1 fractional part of the percentage, while cutting out any weird long fractions (e.g. 50.000001 will be converted to 50.0)
+      final percStr =
+          chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
       final partStr =
           chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
       final stopwatchStr =
@@ -136,6 +139,13 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   await playlistFetchInfoProgress.finishRender();
 
   settings.logger.fine('End result is $videoInfos');
+
+  final convertedRes =
+      jsonEncode({"res": videoInfos.map((e) => e.toJson()).toList()});
+
+  settings.logger.fine('Converted video info map to $convertedRes');
+
+  await videoDataFile.writeAsString(convertedRes);
 }
 
 void main(List<String> arguments) async {
@@ -182,7 +192,7 @@ void main(List<String> arguments) async {
     if (!await logFile.exists()) {
       await logFile.create();
     } else {
-      logFile.writeAsStringSync('',
+      await logFile.writeAsString('',
           flush: true, mode: FileMode.write); // Overwrite with nothing
     }
   }
@@ -194,9 +204,7 @@ void main(List<String> arguments) async {
     hardExit('"cookie_file" argument not specified or empty');
   }
 
-  if (!await File(cookieFile).exists()) {
-    hardExit('Invalid cookie path given');
-  }
+  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
 
   // No idea what is it for Unix systems
   // TODO: Figure out for Unix systems
@@ -209,7 +217,23 @@ void main(List<String> arguments) async {
 
   if (playlistId != null) {
     await fetchVideosLogic(cookieFile, playlistId);
+    exit(0);
   }
+
+  final videoDataFile = File(videoDataFileName);
+  if (!await videoDataFile.exists()) {
+    hardExit(
+        'Video data file has not been created. Supply the "--playlist_id" option first before downloading the videos');
+  }
+
+  // Downloading logic
+  final videoInfos =
+      (jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>)
+          .map((e) => VideoInPlaylist.fromJson(e))
+          .toList();
+  settings.logger.fine('Retrieved video data as $videoInfos');
+
+  for (final videoData in videoInfos) {}
 
   /*print(cmdSplitArgs.split(
       'yt-dlp --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --sub-lang "en.*" --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt" "https://www.youtube.com/watch?v=TXgYLmN6m1U"'));*/
