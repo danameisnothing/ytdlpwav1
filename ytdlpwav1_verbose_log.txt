@@ -1,6 +1,0 @@
-2024-12-28T21:35:33.476432 : Starting yt-dlp process for fetching playlist quantity using argument [yt-dlp, --playlist-items, 0-1, --simulate, --no-flat-playlist, --no-mark-watched, --print, %(.{playlist_count})j, --retries, 999, --fragment-retries, 999, --extractor-retries, 0, --cookies, C:\Users\testnow720\Downloads\cookies-youtube-com.txt, https://www.youtube.com/playlist?list=PL0_dwOU2tpNCftx7w4HxFDxkO-edR32za]
-2024-12-28T21:35:42.263214 : [yt-dlp STDOUT] {"playlist_count": 4}
-2024-12-28T21:35:42.765363 : Got {"playlist_count": 4}
- on playlist count
-2024-12-28T21:35:42.787364 : Starting yt-dlp process for fetching video informations using argument [yt-dlp, --simulate, --no-flat-playlist, --no-mark-watched, --print, %(.{title,id,description,uploader,upload_date})j, --restrict-filenames, --windows-filenames, --retries, 999, --fragment-retries, 999, --extractor-retries, 0, --cookies, C:\Users\testnow720\Downloads\cookies-youtube-com.txt, https://www.youtube.com/playlist?list=PL0_dwOU2tpNCftx7w4HxFDxkO-edR32za]
-2024-12-28T21:35:49.102182 : [yt-dlp STDERR] WARNING: [youtube:tab] Incomplete data received
