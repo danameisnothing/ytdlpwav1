@@ -55,17 +55,6 @@ class ProgressBar {
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
     try {
       // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
-      /*final topIsDouble = _top is double;
-      final curIsDouble = _current is double;
-      final onePartCompHasDecimal = topIsDouble || curIsDouble;
-
-      final topArg =
-          (topIsDouble && onePartCompHasDecimal) ? _top : (_top * 10) / 10;
-      final curArg = (curIsDouble && onePartCompHasDecimal)
-          ? _current
-          : (_current * 10) / 10;*/
-
-      // Hopefully there are no unforseen consequences with this approach
       final topFractStr = (_top.toString().length != 1)
           ? _top
               .toString()

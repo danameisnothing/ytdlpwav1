@@ -40,31 +40,28 @@ Future<String?> procAwaitFirstOutputHack(Stream<List<int>> stream) async {
 }
 
 class VideoInPlaylist {
-  //final String title;
+  final String title;
   final String id;
-  /*final String description;
+  final String description;
   final String uploader;
-  final DateTime uploadDate;*/
+  final DateTime uploadDate;
 
   VideoInPlaylist(
-      /*this.title, */ this.id /*, this.description, this.uploader, this.uploadDate*/);
+      this.title, this.id, this.description, this.uploader, this.uploadDate);
 
   VideoInPlaylist.fromJson(Map<String, dynamic> json)
-      : /*title = json['title'],*/
-        id = json[
-            'id'] /*,
+      : title = json['title'],
+        id = json['id'],
         description = json['description'],
         uploader = json['uploader'],
-        uploadDate = DateTime.parse(json['uploadDate'])*/
-  ;
+        uploadDate = DateTime.parse(json['uploadDate']);
 
   Map<String, dynamic> toJson() => {
-        /*'title': title,*/
-        'id':
-            id /*,
+        'title': title,
+        'id': id,
         'description': description,
         'uploader': uploader,
-        'uploadDate': uploadDate.toIso8601String()*/
+        'uploadDate': uploadDate.toIso8601String()
       };
 
   @override
