@@ -52,50 +52,43 @@ class ProgressBar {
         .replaceFirst(RegExp(r' '), chalk.brightGreen(_activeLeadingChar));
   }
 
+  String formatPartStringNoColorDefault(num curr, num top) {
+    // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
+    final topFractStr = getFractNumberPartStr(top);
+    final curFractStr = getFractNumberPartStr(curr);
+
+    final targetFractLen = max(topFractStr.length, curFractStr.length);
+    final topPassedStr = _top.toStringAsFixed(targetFractLen);
+    final curPassedStr = _current.toStringAsFixed(targetFractLen);
+
+    return '$curPassedStr/$topPassedStr';
+  }
+
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
-    try {
-      // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
-      final topFractStr = (_top.toString().length != 1)
-          ? _top
-              .toString()
-              .replaceFirst(RegExp(_top.truncate().toString()), '')
-              .substring(1)
-          : '';
-      final curFractStr = (_current.toString().length != 1)
-          ? _current
-              .toString()
-              .replaceFirst(RegExp(_current.truncate().toString()), '')
-              .substring(1)
-          : '';
-
-      final topPassed = double.parse(
-          _top.toStringAsFixed(max(topFractStr.length, curFractStr.length)));
-      final curPassed = double.parse(_current
-          .toStringAsFixed(max(topFractStr.length, curFractStr.length)));
-
-      late String str;
-      if (renderFuncIn == null) {
-        if (_renderFunc == null) {
-          throw Exception(
-              'Override function not given in constructor and function');
-        }
-        str = _renderFunc(topPassed, curPassed);
-      } else {
-        str = renderFuncIn(topPassed, curPassed);
+    late String str;
+    if (renderFuncIn == null) {
+      if (_renderFunc == null) {
+        throw Exception(
+            'Override function not given in constructor and function');
       }
-
-      str = str.replaceFirst(
-          RegExp(innerProgressBarIdent),
-          (_innerProgressBarOverrideFunc == null)
-              ? generateInnerProgressBarDefault(_current, _top, _innerWidth)
-              : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
-
-      stdout.write(
-          '\r$str${List.filled(stdout.terminalColumns - stripAnsi(str).length, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
-      await stdout.flush();
-    } catch (_) {
-      // Error may be us not having enough space to print the base message
+      str = _renderFunc(_top, _current);
+    } else {
+      str = renderFuncIn(_top, _current);
     }
+
+    str = str.replaceFirst(
+        RegExp(innerProgressBarIdent),
+        (_innerProgressBarOverrideFunc == null)
+            ? generateInnerProgressBarDefault(_current, _top, _innerWidth)
+            : _innerProgressBarOverrideFunc(_current, _top, _innerWidth));
+
+    final strLen = stripAnsi(str).length;
+    // Handle us not having enough space to print the base message
+    if (stdout.terminalColumns < strLen) return;
+
+    stdout.write(
+        '\r$str${List.filled(stdout.terminalColumns - strLen, ' ').join()}'); // Fill the rest of the empty lines to overwrite any remaining characters from the last print
+    await stdout.flush();
   }
 
   Future finishRender() async {

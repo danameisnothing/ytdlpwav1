@@ -26,7 +26,7 @@ const fetchPlaylistItemCountCmd =
 // https://www.reddit.com/r/youtubedl/comments/19ary5t/is_png_thumbnail_on_mkv_broken_on_ytdlp/
 /// The template for the command used to download a video (tries it with the preferred settings right out of the bat)
 const videoBestCmd =
-    'yt-dlp --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {"percentage":"%(progress._percent_str)s","bytes_downloaded":"%(progress._total_bytes_str)s","download_speed":"%(progress._speed_str)s","ETA":"%(progress._eta_str)s --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"';
+    'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"';
 const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
 const videoDataFileName = 'ytdlpwav1_video_data.json';
 
@@ -144,11 +144,19 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   settings.logger.fine('End result is $videoInfos');
 
   final convertedRes =
-      jsonEncode({"res": videoInfos.map((e) => e.toJson()).toList()});
+      jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()});
 
   settings.logger.fine('Converted video info map to $convertedRes');
 
   await videoDataFile.writeAsString(convertedRes);
+}
+
+Map<String, dynamic>? decodeJSONOrFail(String str) {
+  try {
+    return jsonDecode(str);
+  } catch (e) {
+    return null;
+  }
 }
 
 Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
@@ -177,10 +185,14 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   settings.logger.fine('Retrieved video data as $videoInfos');
 
   for (final videoData in videoInfos) {
-    final downloadVideoBestCmd = cmd_split_args.split(videoBestCmd
-        .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-        .replaceAll(RegExp(r'<video_id>'), videoData.id)
-        .replaceAll(RegExp(r'<output_dir>'), outDir));
+    // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
+    final downloadVideoBestCmd = cmd_split_args
+        .split(videoBestCmd
+            .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
+            .replaceAll(RegExp(r'<video_id>'), videoData.id)
+            .replaceAll(RegExp(r'<output_dir>'), outDir))
+        .map((str) => str.replaceAll(RegExp('\''), '"'))
+        .toList();
     settings.logger.fine(
         'Starting yt-dlp process for downloading videos using argument $downloadVideoBestCmd');
     final picProc = await Process.start(
@@ -190,9 +202,9 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
 
     final subtitleFilePaths = <String>[];
-    late final String endVideoPath;
+    String? endVideoPath;
 
-    await for (final tmpO in broadcastStreams["stdout"]!) {
+    await for (final tmpO in broadcastStreams['stdout']!) {
       // There can be multiple lines in 1 stdout message
       for (final output in String.fromCharCodes(tmpO).split('\n')) {
         if (RegExp(r'\[download\]').hasMatch(output) &&
@@ -206,6 +218,20 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
               RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
           settings.logger.info('found $endVideoPath'); // FIXME: change to fine
         }
+        // TEMP ALTERNATIVE MODE!
+        if (RegExp(r'\[download\]').hasMatch(output) &&
+            (output.endsWith('.mkv') ||
+                output.endsWith('.webm') ||
+                output.endsWith('.mp4'))) {
+          endVideoPath = output.split(' ').elementAt(2);
+          settings.logger.info('found $endVideoPath'); // FIXME: change to fine
+        }
+
+        final progressOut = decodeJSONOrFail(output);
+        if (progressOut != null && endVideoPath != null) {
+          settings.logger
+              .info('prog: ${(progressOut['percentage'] as String).trim()}');
+        }
       }
     }
 
@@ -213,9 +239,41 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
 
     if (await picProc.exitCode != 0) {
       settings.logger.warning(
-          'Video named ${videoData.title} failed to be downloaded, continuing');
+          'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+
+      // DEBUGGING LOGIC!
+      // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
+      /*for (final path in subtitleFilePaths) {
+        await File(path).delete();
+        settings.logger.info(
+            'Deleted subtitle file on path $path'); // FIXME: change to fine
+      }
+      if (endVideoPath != null) {
+        await File(endVideoPath).delete();
+        settings.logger.info(
+            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+      }*/
+    } else {
+      break;
     }
-    break;
+
+    /*final ef = ProgressBar(top: 144268, innerWidth: 32);
+    final comp = Completer();
+    final periodic =
+        Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
+      ef.increment();
+      await ef.renderInLine((total, current) {
+        final percStr = chalk
+            .brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
+        final partStr = chalk
+            .brightMagenta(ef.formatPartStringNoColorDefault(current, total));
+        return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
+      });
+      if (ef.isCompleted()) comp.complete();
+    }).listen((_) => 0);
+    await comp.future;
+    periodic.cancel();
+    await ef.finishRender();*/
   }
 }
 

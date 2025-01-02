@@ -30,6 +30,16 @@ Map<String, Stream<List<int>>> implantVerboseLoggerReturnBackStream(
   };
 }
 
+String getFractNumberPartStr(num n) {
+  final subFract =
+      n.toString().replaceFirst(RegExp(n.truncate().toString()), '');
+
+  if (subFract.isEmpty) {
+    return "";
+  }
+  return subFract.substring(1);
+}
+
 // wtf
 Future<String?> procAwaitFirstOutputHack(Stream<List<int>> stream) async {
   await for (final e in stream) {
