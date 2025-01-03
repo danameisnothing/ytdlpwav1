@@ -30,6 +30,8 @@ const videoBestCmd =
 const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
 const videoDataFileName = 'ytdlpwav1_video_data.json';
 
+enum ProgressState { uninitialized, video, audio }
+
 Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
   final playlistItemCountCmd = cmd_split_args.split(fetchPlaylistItemCountCmd
       .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
@@ -184,6 +186,19 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           .toList();
   settings.logger.fine('Retrieved video data as $videoInfos');
 
+  final downloadVideoProgress =
+      ProgressBar(top: videoInfos.length, innerWidth: 32);
+  final periodic =
+      Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
+    await downloadVideoProgress.renderInLine((total, current) {
+      final percStr =
+          chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
+      final partStr = chalk.brightMagenta(
+          '${current.toStringAsFixed(0)}/${total.toStringAsFixed(0)}');
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
+    });
+  }).listen((_) => 0);
+
   for (final videoData in videoInfos) {
     // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
     final downloadVideoBestCmd = cmd_split_args
@@ -204,6 +219,15 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     final subtitleFilePaths = <String>[];
     String? endVideoPath;
 
+    // FIXME: right type of doc comment?
+    /// Holds the state for which is used to track what state the progress is in
+    /// For example, if the state is [ProgressState.video], it is currently downloading video
+    /// Likewise, [ProgressState.audio] means it is currently downloading audio
+    /// In this case, it is used to keep track of progress to display to the user
+    /// [ProgressState.uninitialized] just means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
+    ProgressState progressState = ProgressState
+        .uninitialized; // Holds the state of which the logging must be done
+
     await for (final tmpO in broadcastStreams['stdout']!) {
       // There can be multiple lines in 1 stdout message
       for (final output in String.fromCharCodes(tmpO).split('\n')) {
@@ -218,19 +242,49 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
               RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
           settings.logger.info('found $endVideoPath'); // FIXME: change to fine
         }
+
         // TEMP ALTERNATIVE MODE!
         if (RegExp(r'\[download\]').hasMatch(output) &&
             (output.endsWith('.mkv') ||
                 output.endsWith('.webm') ||
                 output.endsWith('.mp4'))) {
-          endVideoPath = output.split(' ').elementAt(2);
+          if (progressState == ProgressState.uninitialized) {
+            progressState = ProgressState.video;
+          } else {
+            progressState = ProgressState.audio;
+          }
+
           settings.logger.info('found $endVideoPath'); // FIXME: change to fine
         }
 
         final progressOut = decodeJSONOrFail(output);
-        if (progressOut != null && endVideoPath != null) {
-          settings.logger
-              .info('prog: ${(progressOut['percentage'] as String).trim()}');
+        if (progressOut != null &&
+            progressState != ProgressState.uninitialized) {
+          settings.logger.info('json: $progressOut on mode $progressState');
+
+          // FIXME: right type of doc comment?
+          /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
+          /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
+          final standalonePartProgStr = double.parse(
+                  '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
+              (downloadVideoProgress.progress -
+                  (double.parse((progressOut["percentage"] as String)
+                              .trim()
+                              .replaceFirst(RegExp(r'%'), '')) /
+                          100) /
+                      4);
+          // FIXME: "silent" crash when file is already downloaded due to this?
+          downloadVideoProgress.progress = double.parse((downloadVideoProgress
+                      .progress
+                      .truncate() +
+                  (double.parse(
+                          '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
+                      standalonePartProgStr))
+              .toStringAsFixed(1));
+          /*settings.logger.info(double.parse(
+                  '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
+              standalonePartProgStr);
+          settings.logger.info(downloadVideoProgress.progress.truncate());*/
         }
       }
     }
@@ -240,6 +294,9 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     if (await picProc.exitCode != 0) {
       settings.logger.warning(
           'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+
+      // FIXME: only for now! we have not implemented the other download option yet!
+      downloadVideoProgress.increment();
 
       // DEBUGGING LOGIC!
       // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
@@ -275,6 +332,9 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     periodic.cancel();
     await ef.finishRender();*/
   }
+
+  periodic.cancel();
+  await downloadVideoProgress.finishRender();
 }
 
 void main(List<String> arguments) async {
