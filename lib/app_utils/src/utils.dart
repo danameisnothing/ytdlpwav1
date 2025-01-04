@@ -13,7 +13,7 @@ void hardExit(String msg) {
   exit(1);
 }
 
-Map<String, Stream<List<int>>> implantVerboseLoggerReturnBackStream(
+Map<String, Stream<List<int>>> implantDebugLoggerReturnBackStream(
     Process proc, String procNameToLog) {
   // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
   final stderrBroadcast = proc.stderr.asBroadcastStream();

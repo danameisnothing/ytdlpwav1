@@ -3,4 +3,5 @@
 .dart_tool/
 .vscode/
 ytdlpwav1_verbose_log.txt
+ytdlpwav1_debug_log.txt
 ytdlpwav1_video_data.json

@@ -16,7 +16,7 @@ class ProgressBar {
   final String _activeLeadingChar;
   final String Function(num, num)? _renderFunc;
   final String Function(num, num, int)? _innerProgressBarOverrideFunc;
-  num progress = 0;
+  num _progress = 0;
 
   ProgressBar(
       {num top = 100,
@@ -37,13 +37,20 @@ class ProgressBar {
   int get innerWidth => _innerWidth;
   num get top => _top;
   set top(num val) => _top;
-
-  void increment([num value = 1]) {
-    progress += value;
-    progress = progress.clamp(0.0, _top);
+  num get progress => _progress;
+  set progress(num val) {
+    if (val.clamp(0.0, _top) != val) {
+      throw Exception("Value $val is more or less than $_top");
+    }
+    _progress = val;
   }
 
-  bool isCompleted() => (progress - _top).abs() <= 0.0001;
+  void increment([num value = 1]) {
+    _progress += value;
+    _progress = _progress.clamp(0.0, _top);
+  }
+
+  bool isCompleted() => (_progress - _top).abs() <= 0.0001;
 
   String generateInnerProgressBarDefault(num curr, num top, int targetWidth) {
     final activePortionScaled = map(curr, 0, top, 0, targetWidth)
@@ -59,7 +66,7 @@ class ProgressBar {
 
     final targetFractLen = max(topFractStr.length, curFractStr.length);
     final topPassedStr = _top.toStringAsFixed(targetFractLen);
-    final curPassedStr = progress.toStringAsFixed(targetFractLen);
+    final curPassedStr = _progress.toStringAsFixed(targetFractLen);
 
     return '$curPassedStr/$topPassedStr';
   }
@@ -72,16 +79,16 @@ class ProgressBar {
           throw Exception(
               'Override function not given in constructor and function');
         }
-        str = _renderFunc(_top, progress);
+        str = _renderFunc(_top, _progress);
       } else {
-        str = renderFuncIn(_top, progress);
+        str = renderFuncIn(_top, _progress);
       }
 
       str = str.replaceFirst(
           RegExp(innerProgressBarIdent),
           (_innerProgressBarOverrideFunc == null)
-              ? generateInnerProgressBarDefault(progress, _top, _innerWidth)
-              : _innerProgressBarOverrideFunc(progress, _top, _innerWidth));
+              ? generateInnerProgressBarDefault(_progress, _top, _innerWidth)
+              : _innerProgressBarOverrideFunc(_progress, _top, _innerWidth));
 
       final strLen = stripAnsi(str).length;
       // Handle us not having enough space to print the base message

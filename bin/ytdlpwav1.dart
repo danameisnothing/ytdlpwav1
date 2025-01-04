@@ -27,7 +27,9 @@ const fetchPlaylistItemCountCmd =
 /// The template for the command used to download a video (tries it with the preferred settings right out of the bat)
 const videoBestCmd =
     'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"';
-const verboseLogFileName = 'ytdlpwav1_verbose_log.txt';
+const ffmpegExtractThumbnailCmd =
+    'ffmpeg -hide_banner -i "out.mkv" -map 0:2 -update 1 -frames:v 1 thumb.temp.png';
+const debugLogFileName = 'ytdlpwav1_debug_log.txt';
 const videoDataFileName = 'ytdlpwav1_video_data.json';
 
 enum ProgressState { uninitialized, video, audio }
@@ -42,13 +44,13 @@ Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
       playlistItemCountCmd.removeAt(0), playlistItemCountCmd);
 
   final broadcastStreams =
-      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
+      implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
 
   final data = await procAwaitFirstOutputHack(broadcastStreams['stdout']!);
 
   if (await picProc.exitCode != 0) {
     hardExit(
-        'An error occured while fetching playlist quantity. Use the --verbose flag to see more details');
+        'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
   }
 
   settings.logger.fine('Got $data on playlist count');
@@ -67,7 +69,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
   final picProc = await Process.start(videoInfosCmd.removeAt(0), videoInfosCmd);
 
   final broadcastStreams =
-      implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
+      implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
 
   await for (final e in broadcastStreams['stdout']!) {
     final data = jsonDecode(String.fromCharCodes(e));
@@ -89,7 +91,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 
   if (await picProc.exitCode != 0) {
     hardExit(
-        'An error occured while fetching video infos. Use the --verbose flag to see more details');
+        'An error occured while fetching video infos. Use the --debug flag to see more details');
   }
 }
 
@@ -214,7 +216,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
 
     final broadcastStreams =
-        implantVerboseLoggerReturnBackStream(picProc, 'yt-dlp');
+        implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
 
     final subtitleFilePaths = <String>[];
     String? endVideoPath;
@@ -228,6 +230,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     ProgressState progressState = ProgressState
         .uninitialized; // Holds the state of which the logging must be done
 
+    // FIXME: move out of this func?
     await for (final tmpO in broadcastStreams['stdout']!) {
       // There can be multiple lines in 1 stdout message
       for (final output in String.fromCharCodes(tmpO).split('\n')) {
@@ -240,7 +243,8 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
           endVideoPath =
               RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
-          settings.logger.info('found $endVideoPath'); // FIXME: change to fine
+          settings.logger
+              .info('found end video $endVideoPath'); // FIXME: change to fine
         }
 
         // TEMP ALTERNATIVE MODE!
@@ -254,37 +258,27 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
             progressState = ProgressState.audio;
           }
 
-          settings.logger.info('found $endVideoPath'); // FIXME: change to fine
+          settings.logger.info('found $output'); // FIXME: change to fine
         }
 
         final progressOut = decodeJSONOrFail(output);
         if (progressOut != null &&
             progressState != ProgressState.uninitialized) {
-          settings.logger.info('json: $progressOut on mode $progressState');
+          settings.logger.info(
+              'json: $progressOut on mode $progressState'); // FIXME: change to fine
 
           // FIXME: right type of doc comment?
           /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
           /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
-          final standalonePartProgStr = double.parse(
-                  '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
-              (downloadVideoProgress.progress -
-                  (double.parse((progressOut["percentage"] as String)
-                              .trim()
-                              .replaceFirst(RegExp(r'%'), '')) /
-                          100) /
-                      4);
-          // FIXME: "silent" crash when file is already downloaded due to this?
-          downloadVideoProgress.progress = double.parse((downloadVideoProgress
-                      .progress
-                      .truncate() +
-                  (double.parse(
-                          '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
-                      standalonePartProgStr))
-              .toStringAsFixed(1));
-          /*settings.logger.info(double.parse(
-                  '0.${getFractNumberPartStr(downloadVideoProgress.progress)}') -
-              standalonePartProgStr);
-          settings.logger.info(downloadVideoProgress.progress.truncate());*/
+          final standalonePartProgStr = (double.parse(
+                      (progressOut["percentage"] as String)
+                          .trim()
+                          .replaceFirst(RegExp(r'%'), '')) /
+                  100) /
+              4;
+          downloadVideoProgress.progress = downloadVideoProgress.progress
+                  .truncate() +
+              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr);
         }
       }
     }
@@ -300,7 +294,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
 
       // DEBUGGING LOGIC!
       // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-      /*for (final path in subtitleFilePaths) {
+      for (final path in subtitleFilePaths) {
         await File(path).delete();
         settings.logger.info(
             'Deleted subtitle file on path $path'); // FIXME: change to fine
@@ -309,28 +303,37 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         await File(endVideoPath).delete();
         settings.logger.info(
             'Deleted video file on path $endVideoPath'); // FIXME: change to fine
-      }*/
-    } else {
-      break;
+      }
+
+      // FIXME: only for now! we have not implemented the other download option yet!
+      continue;
     }
 
-    /*final ef = ProgressBar(top: 144268, innerWidth: 32);
-    final comp = Completer();
-    final periodic =
-        Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
-      ef.increment();
-      await ef.renderInLine((total, current) {
-        final percStr = chalk
-            .brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
-        final partStr = chalk
-            .brightMagenta(ef.formatPartStringNoColorDefault(current, total));
-        return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
-      });
-      if (ef.isCompleted()) comp.complete();
-    }).listen((_) => 0);
-    await comp.future;
-    periodic.cancel();
-    await ef.finishRender();*/
+    // TODO: check if file (the one created by this program) already exist!
+    // progressState can become uninitialized when the file is already downloaded
+    if (progressState == ProgressState.uninitialized) {
+      settings.logger.warning(
+          'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+
+      // DEBUGGING LOGIC!
+      // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
+      // FIXME: a duplicate thing
+      // just in case
+      for (final path in subtitleFilePaths) {
+        await File(path).delete();
+        settings.logger.info(
+            'Deleted subtitle file on path $path'); // FIXME: change to fine
+      }
+      if (endVideoPath != null) {
+        await File(endVideoPath).delete();
+        settings.logger.info(
+            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+      }
+    }
+
+    // TODO: FFMPEG LOGIC
+
+    break;
   }
 
   periodic.cancel();
@@ -338,7 +341,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
 }
 
 void main(List<String> arguments) async {
-  settings.logger = Logger('piss');
+  settings.logger = Logger('ytdlpwav1');
   Logger.root.onRecord.listen((rec) {
     String levelName = '[${rec.level.name}]';
     switch (rec.level) {
@@ -354,7 +357,7 @@ void main(List<String> arguments) async {
     }
     if (rec.level == Level.FINE) {
       final logFile =
-          File(verboseLogFileName); // Guaranteed to exist at this point
+          File(debugLogFileName); // Guaranteed to exist at this point
       logFile.writeAsStringSync(
           '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
           flush: true,
@@ -374,14 +377,13 @@ void main(List<String> arguments) async {
       abbr: 'o',
       help: 'The target output directory of downloaded videos',
       mandatory: false);
-  argParser.addFlag('verbose',
-      abbr: 'v', help: 'Logs verbose output on a file');
+  argParser.addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
 
   final parsedArgs = argParser.parse(arguments);
 
-  if (parsedArgs.flag('verbose')) {
+  if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
-    final logFile = File(verboseLogFileName);
+    final logFile = File(debugLogFileName);
     if (!await logFile.exists()) {
       await logFile.create();
     } else {
