@@ -8,92 +8,14 @@ import 'package:chalkdart/chalk_x11.dart';
 import 'package:cli_spin/cli_spin.dart';
 import 'package:logging/logging.dart';
 
-import 'package:ytdlpwav1/app_preferences/app_preferences.dart';
+import 'package:ytdlpwav1/app_settings/app_settings.dart';
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
     as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
-
-// Do NOT alter the <cookie_file>, <playlist_id>, <video_id> and <output_dir> hardcoded strings.
-// https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/ (I am a dumbass)
-/// The template for the command used to fetch information about videos in a playlist
-const fetchVideoInfosCmd =
-    'yt-dlp --simulate --no-flat-playlist --no-mark-watched --print "%(.{title,id,description,uploader,upload_date})j" --restrict-filenames --windows-filenames --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
-// https://github.com/yt-dlp/yt-dlp/issues/8562
-/// The template for the command used to fetch how many videos in a playlist
-const fetchPlaylistItemCountCmd =
-    'yt-dlp --playlist-items 0-1 --simulate --no-flat-playlist --no-mark-watched --print "%(.{playlist_count})j" --retries 999 --fragment-retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/playlist?list=<playlist_id>"';
-// https://www.reddit.com/r/youtubedl/comments/19ary5t/is_png_thumbnail_on_mkv_broken_on_ytdlp/
-/// The template for the command used to download a video (tries it with the preferred settings right out of the bat)
-const videoBestCmd =
-    'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"';
-const ffmpegExtractThumbnailCmd =
-    'ffmpeg -hide_banner -i "out.mkv" -map 0:2 -update 1 -frames:v 1 thumb.temp.png';
-const debugLogFileName = 'ytdlpwav1_debug_log.txt';
-const videoDataFileName = 'ytdlpwav1_video_data.json';
+import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
 enum ProgressState { uninitialized, video, audio }
-
-Future<int> getPlaylistQuantity(String cookieFile, String playlistId) async {
-  final playlistItemCountCmd = cmd_split_args.split(fetchPlaylistItemCountCmd
-      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
-  settings.logger.fine(
-      'Starting yt-dlp process for fetching playlist quantity using argument $playlistItemCountCmd');
-  final picProc = await Process.start(
-      playlistItemCountCmd.removeAt(0), playlistItemCountCmd);
-
-  final broadcastStreams =
-      implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
-
-  final data = await procAwaitFirstOutputHack(broadcastStreams['stdout']!);
-
-  if (await picProc.exitCode != 0) {
-    hardExit(
-        'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
-  }
-
-  settings.logger.fine('Got $data on playlist count');
-
-  return jsonDecode(data!)['playlist_count']!
-      as int; // Data can't be null because of the exitCode check
-}
-
-Stream<VideoInPlaylist> getPlaylistVideoInfos(
-    String cookieFile, String playlistId) async* {
-  final videoInfosCmd = cmd_split_args.split(fetchVideoInfosCmd
-      .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-      .replaceAll(RegExp(r'<playlist_id>'), playlistId));
-  settings.logger.fine(
-      'Starting yt-dlp process for fetching video informations using argument $videoInfosCmd');
-  final picProc = await Process.start(videoInfosCmd.removeAt(0), videoInfosCmd);
-
-  final broadcastStreams =
-      implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
-
-  await for (final e in broadcastStreams['stdout']!) {
-    final data = jsonDecode(String.fromCharCodes(e));
-
-    final uploadDate = data['upload_date'] as String;
-    final parsed = VideoInPlaylist(
-        data['title'],
-        data['id'],
-        data['description'],
-        data['uploader'],
-        DateTime(
-          int.parse(uploadDate.substring(0, 4)),
-          int.parse(uploadDate.substring(4, 6)),
-          int.parse(uploadDate.substring(6, 8)),
-        ));
-    settings.logger.fine('Got update on stdout, parsed as $parsed');
-    yield parsed;
-  }
-
-  if (await picProc.exitCode != 0) {
-    hardExit(
-        'An error occured while fetching video infos. Use the --debug flag to see more details');
-  }
-}
 
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final videoDataFile = File(videoDataFileName);
@@ -110,10 +32,15 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
   spinnerProcessLaunching.stop();
 
+  if (playlistQuantity == null) {
+    hardExit(
+        'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
+  }
+
   settings.logger.info('Fetched video quantity in playlist');
 
   final playlistFetchInfoProgress =
-      ProgressBar(top: playlistQuantity, innerWidth: 32);
+      ProgressBar(top: playlistQuantity!, innerWidth: 32);
 
   final stopwatch = Stopwatch()..start();
 
@@ -155,14 +82,6 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   await videoDataFile.writeAsString(convertedRes);
 }
 
-Map<String, dynamic>? decodeJSONOrFail(String str) {
-  try {
-    return jsonDecode(str);
-  } catch (e) {
-    return null;
-  }
-}
-
 Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   final videoDataFile = File(videoDataFileName);
   if (!await videoDataFile.exists()) {
@@ -171,7 +90,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   }
 
   final outDir = passedOutDir ?? Directory.current.path;
-  // Exclusively for logging if you are wondering why it's here
+  // Exclusively for logging if you are wondering why this if statement is here
   if (passedOutDir != outDir) {
     settings.logger.info('Using default path of current directory at $outDir');
   }
@@ -212,11 +131,11 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         .toList();
     settings.logger.fine(
         'Starting yt-dlp process for downloading videos using argument $downloadVideoBestCmd');
-    final picProc = await Process.start(
+    final vbProc = await Process.start(
         downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
 
     final broadcastStreams =
-        implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
+        implantDebugLoggerReturnBackStream(vbProc, 'yt-dlp');
 
     final subtitleFilePaths = <String>[];
     String? endVideoPath;
@@ -285,7 +204,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
 
     // TODO: save progress on every loop!
 
-    if (await picProc.exitCode != 0) {
+    if (await vbProc.exitCode != 0) {
       settings.logger.warning(
           'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
 
@@ -332,6 +251,17 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     }
 
     // TODO: FFMPEG LOGIC
+    final ffmpegExtrThmbCmd = cmd_split_args
+        .split(ffmpegExtractThumbnailCmd.replaceAll(
+            RegExp(r'<video_input>'), cookieFile))
+        .toList();
+    settings.logger.fine(
+        'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $downloadVideoBestCmd');
+    final dvbProc = await Process.start(
+        downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
+
+    /*final broadcastStreams =
+        implantDebugLoggerReturnBackStream(dvbProc, 'ffmpeg');*/
 
     break;
   }
@@ -379,7 +309,13 @@ void main(List<String> arguments) async {
       mandatory: false);
   argParser.addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
 
-  final parsedArgs = argParser.parse(arguments);
+  late final ArgResults parsedArgs;
+  try {
+    parsedArgs = argParser.parse(arguments);
+  } on ArgParserException catch (_) {
+    // TODO: add help message for available commands?
+    hardExit("TODO");
+  }
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;

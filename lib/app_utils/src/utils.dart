@@ -1,7 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:async';
 
-import 'package:ytdlpwav1/app_preferences/app_preferences.dart';
+import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
 // From Processing's map() function code
 double map(num value, num istart, num istop, num ostart, num ostop) {
@@ -11,6 +12,14 @@ double map(num value, num istart, num istop, num ostart, num ostop) {
 void hardExit(String msg) {
   settings.logger.severe(msg);
   exit(1);
+}
+
+Map<String, dynamic>? decodeJSONOrFail(String str) {
+  try {
+    return jsonDecode(str);
+  } catch (e) {
+    return null;
+  }
 }
 
 Map<String, Stream<List<int>>> implantDebugLoggerReturnBackStream(
