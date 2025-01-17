@@ -32,11 +32,8 @@ Map<String, dynamic>? decodeJSONOrFail(String str) {
       .fine('[$procNameToLog STDERR] ${String.fromCharCodes(e).trim()}'));
   stdoutBroadcast.listen((e) => settings.logger
       .fine('[$procNameToLog STDOUT] ${String.fromCharCodes(e).trim()}'));
-
-  return {
-    'stderr': stderrBroadcast,
-    'stdout': stdoutBroadcast,
-  };
+  
+  return (stdout: stdoutBroadcast, stderr: stderrBroadcast);
 }
 
 String getFractNumberPartStr(num n) {

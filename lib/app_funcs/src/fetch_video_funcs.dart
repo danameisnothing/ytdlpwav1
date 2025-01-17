@@ -19,7 +19,7 @@ Future<int?> getPlaylistQuantity(String cookieFile, String playlistId) async {
   final broadcastStreams =
       implantDebugLoggerReturnBackStream(picProc, 'yt-dlp');
 
-  final data = await procAwaitFirstOutputHack(broadcastStreams['stdout']!);
+  final data = await procAwaitFirstOutputHack(broadcastStreams.stdout);
 
   if (await picProc.exitCode != 0) {
     return null;
@@ -43,7 +43,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 
   final broadcastStreams = implantDebugLoggerReturnBackStream(viProc, 'yt-dlp');
 
-  await for (final e in broadcastStreams['stdout']!) {
+  await for (final e in broadcastStreams.stdout) {
     final data = jsonDecode(String.fromCharCodes(e));
 
     final uploadDate = data['upload_date'] as String;

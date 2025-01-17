@@ -50,7 +50,7 @@ Stream<({DownloadProgressMessageType msgType, Object? message})>
         .uninitialized; // Holds the state of which the logging must be done
 
     // FIXME: move out of this func?
-    await for (final tmpO in broadcastStreams['stdout']!) {
+    await for (final tmpO in broadcastStreams.stdout) {
       // There can be multiple lines in 1 stdout message
       for (final output in String.fromCharCodes(tmpO).split('\n')) {
         if (RegExp(r'\[download\]').hasMatch(output) &&
