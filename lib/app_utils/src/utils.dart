@@ -22,7 +22,7 @@ Map<String, dynamic>? decodeJSONOrFail(String str) {
   }
 }
 
-Map<String, Stream<List<int>>> implantDebugLoggerReturnBackStream(
+({Stream<List<int>> stdout, Stream<List<int>> stderr}) implantDebugLoggerReturnBackStream(
     Process proc, String procNameToLog) {
   // Thank you https://stackoverflow.com/questions/51396769/flutter-bad-state-stream-has-already-been-listened-to
   final stderrBroadcast = proc.stderr.asBroadcastStream();

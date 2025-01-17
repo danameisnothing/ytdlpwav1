@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
@@ -14,8 +15,6 @@ import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
-
-enum ProgressState { uninitialized, video, audio }
 
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final videoDataFile = File(videoDataFileName);
@@ -120,8 +119,68 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     });
   }).listen((_) => 0);
 
+  final subtitleFp = <String>[];
+  // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
+  String? endVideoPath;
+
   for (final videoData in videoInfos) {
-    // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
+    final res = downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData);
+    final resBroadcast = res.asBroadcastStream();
+    await for (final info in resBroadcast) {
+      // FIXNME: Cleanup
+      settings.logger.info(info);
+
+      if (info.msgType == DownloadProgressMessageType.subtitle) subtitleFp.add(info.message! as String);
+      if (info.msgType == DownloadProgressMessageType.videoFinal) endVideoPath = info.message! as String;
+
+      if (info.msgType == DownloadProgressMessageType.completed) {
+        // FIXME: only for now! we have not implemented the other download option yet!
+        downloadVideoProgress.increment();
+
+        // DEBUGGING LOGIC!
+        // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
+        for (final path in subtitleFp) {
+          await File(path).delete();
+          settings.logger.info(
+              'Deleted subtitle file on path $path'); // FIXME: change to fine
+        }
+        if (endVideoPath != null) {
+          await File(endVideoPath).delete();
+          settings.logger.info(
+              'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+        }
+
+        switch (info.message) {
+          case DownloadReturnStatus.processNonZeroExit:
+            settings.logger.warning(
+              'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+            break;
+          case DownloadReturnStatus.progressStateStayedUninitialized:
+            settings.logger.warning(
+              'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+            break;
+        }
+
+        // FIXME: only for now! we have not implemented the other download option yet!
+        continue;
+      }
+    }
+
+    settings.logger.info(await resBroadcast.last);
+
+    // FIXME: right type of doc comment?
+          /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
+          /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
+          /* final standalonePartProgStr = (double.parse(
+                      (progressOut["percentage"] as String)
+                          .trim()
+                          .replaceFirst(RegExp(r'%'), '')) /
+                  100) /
+              4;
+          downloadVideoProgress.progress = downloadVideoProgress.progress
+                  .truncate() +
+              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
+    /* // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
     final downloadVideoBestCmd = cmd_split_args
         .split(videoBestCmd
             .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
@@ -199,56 +258,10 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
                   .truncate() +
               (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr);
         }
-      }
+      } */
     }
 
     // TODO: save progress on every loop!
-
-    if (await vbProc.exitCode != 0) {
-      settings.logger.warning(
-          'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
-
-      // FIXME: only for now! we have not implemented the other download option yet!
-      downloadVideoProgress.increment();
-
-      // DEBUGGING LOGIC!
-      // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-      for (final path in subtitleFilePaths) {
-        await File(path).delete();
-        settings.logger.info(
-            'Deleted subtitle file on path $path'); // FIXME: change to fine
-      }
-      if (endVideoPath != null) {
-        await File(endVideoPath).delete();
-        settings.logger.info(
-            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
-      }
-
-      // FIXME: only for now! we have not implemented the other download option yet!
-      continue;
-    }
-
-    // TODO: check if file (the one created by this program) already exist!
-    // progressState can become uninitialized when the file is already downloaded
-    if (progressState == ProgressState.uninitialized) {
-      settings.logger.warning(
-          'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
-
-      // DEBUGGING LOGIC!
-      // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-      // FIXME: a duplicate thing
-      // just in case
-      for (final path in subtitleFilePaths) {
-        await File(path).delete();
-        settings.logger.info(
-            'Deleted subtitle file on path $path'); // FIXME: change to fine
-      }
-      if (endVideoPath != null) {
-        await File(endVideoPath).delete();
-        settings.logger.info(
-            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
-      }
-    }
 
     // TODO: FFMPEG LOGIC
     final ffmpegExtrThmbCmd = cmd_split_args
@@ -256,46 +269,19 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
             RegExp(r'<video_input>'), cookieFile))
         .toList();
     settings.logger.fine(
-        'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $downloadVideoBestCmd');
+        'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $ffmpegExtrThmbCmd');
     final dvbProc = await Process.start(
-        downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
+        ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd);
 
     /*final broadcastStreams =
         implantDebugLoggerReturnBackStream(dvbProc, 'ffmpeg');*/
-
-    break;
-  }
-
-  periodic.cancel();
-  await downloadVideoProgress.finishRender();
 }
 
+  /* periodic.cancel();
+  await downloadVideoProgress.finishRender(); */
+
+
 void main(List<String> arguments) async {
-  settings.logger = Logger('ytdlpwav1');
-  Logger.root.onRecord.listen((rec) {
-    String levelName = '[${rec.level.name}]';
-    switch (rec.level) {
-      case Level.INFO:
-        levelName = chalk.grey(levelName);
-        break;
-      case Level.WARNING:
-        levelName = chalk.yellowBright(levelName);
-        break;
-      case Level.SEVERE:
-        levelName = chalk.redBright('[ERROR]');
-        break;
-    }
-    if (rec.level == Level.FINE) {
-      final logFile =
-          File(debugLogFileName); // Guaranteed to exist at this point
-      logFile.writeAsStringSync(
-          '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
-          flush: true,
-          mode: FileMode.append);
-      return;
-    }
-    print('$levelName ${rec.message}');
-  });
   Logger.root.level = Level.INFO;
 
   final argParser = ArgParser();
@@ -314,8 +300,20 @@ void main(List<String> arguments) async {
     parsedArgs = argParser.parse(arguments);
   } on ArgParserException catch (_) {
     // TODO: add help message for available commands?
-    hardExit("TODO");
+    hardExit('TODO LIST AVAILABLE COMMANDS');
   }
+
+  final cookieFile = parsedArgs.option('cookie_file');
+  final playlistId = parsedArgs.option('playlist_id');
+  final outDir = parsedArgs.option('output_dir');
+
+  if (cookieFile == null) {
+    hardExit('"cookie_file" argument not specified or empty');
+  }
+
+  if (!await File(cookieFile!).exists()) hardExit('Invalid cookie path given');
+
+  initSettings(cookieFile: cookieFile, playlistId: playlistId, outputDir: outDir);
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
@@ -328,16 +326,6 @@ void main(List<String> arguments) async {
     }
   }
 
-  final cookieFile = parsedArgs.option('cookie_file') ?? '';
-  final playlistId = parsedArgs.option('playlist_id') ?? '';
-  final outDir = parsedArgs.option('output_dir');
-
-  if (cookieFile.isEmpty) {
-    hardExit('"cookie_file" argument not specified or empty');
-  }
-
-  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
-
   // No idea what is it for Unix systems
   // TODO: Figure out for Unix systems
   if (Platform.isWindows) {
@@ -348,8 +336,8 @@ void main(List<String> arguments) async {
   }
 
   // We need playlist_id if the user is intending to choose this mode, but we don't explicitly need output_dir to be set
-  if (playlistId.isNotEmpty) {
-    await fetchVideosLogic(cookieFile, playlistId);
+  if ((playlistId ?? '').isNotEmpty) {
+    await fetchVideosLogic(cookieFile, playlistId!);
     exit(0);
   } else if (outDir != null) {
     await downloadVideosLogic(cookieFile, outDir);
