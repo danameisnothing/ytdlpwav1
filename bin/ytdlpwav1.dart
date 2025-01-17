@@ -115,34 +115,60 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
       final partStr = chalk.brightMagenta(
           '${current.toStringAsFixed(0)}/${total.toStringAsFixed(0)}');
-      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · ${chalk.brightGreen('WOOL_OVER_OUR_EYES_Cult_of_the_Lamb_Song.f399.mp4')}'; // TODO: ADD ETA LOGIC!
     });
   }).listen((_) => 0);
 
-  final subtitleFp = <String>[];
-  // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
-  String? endVideoPath;
-
   for (final videoData in videoInfos) {
+    final subtitleFp = <String>[];
+    // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
+    String? endVideoPath;
+
     final res = downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData);
     final resBroadcast = res.asBroadcastStream();
 
     resBroadcast.forEach((info) async {
-      // FIXNME: Cleanup
+      // FIXME: Cleanup
       settings.logger.info(info);
 
       if (info.msgType == DownloadProgressMessageType.subtitle) {
         subtitleFp.add(info.message! as String);
-      }
-      if (info.msgType == DownloadProgressMessageType.videoFinal) {
+      } else if (info.msgType == DownloadProgressMessageType.videoFinal) {
         endVideoPath = info.message! as String;
+      }
+
+      switch (info.msgType) {
+        case DownloadProgressMessageType.videoProgress:
+        case DownloadProgressMessageType.audioProgress:
+          break;
+        default:
+          return;
+      }
+
+      final progStr = info.message as String;
+
+      final standalonePartProgStr =
+          (double.parse(progStr.trim().replaceFirst(RegExp(r'%'), '')) / 100) /
+              4;
+      /* downloadVideoProgress.progress =
+          downloadVideoProgress.progress.truncate() +
+              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
+
+      switch (info.msgType) {
+        case DownloadProgressMessageType.videoProgress:
+          downloadVideoProgress.progress =
+              downloadVideoProgress.progress.truncate() +
+                  (((1 / 4) * 0) + standalonePartProgStr);
+          break;
+        case DownloadProgressMessageType.audioProgress:
+          downloadVideoProgress.progress =
+              downloadVideoProgress.progress.truncate() +
+                  (((1 / 4) * 1) + standalonePartProgStr);
+        default:
       }
     });
 
     final lastRet = await resBroadcast.last;
-
-    // FIXME: only for now! we have not implemented the other download option yet!
-    downloadVideoProgress.increment();
 
     // DEBUGGING LOGIC!
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
@@ -161,17 +187,21 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
       case DownloadReturnStatus.processNonZeroExit:
         settings.logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
-        // FIXME: intentionally commented out, remove when we have implemented the other download options!
-        // FIXME: only for now! we have not implemented the other download option yet!
-        continue;
-      //break;
+        break;
       case DownloadReturnStatus.progressStateStayedUninitialized:
         settings.logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
-        // FIXME: intentionally commented out, remove when we have implemented the other download options!
-        // FIXME: only for now! we have not implemented the other download option yet!
-        continue;
-      //break;
+        break;
+    }
+
+    if (lastRet.message != DownloadReturnStatus.success) {
+      settings.logger.fine('Failure point reached');
+      // FIXME: only for now! we have not implemented the other download option yet!
+
+      // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+      downloadVideoProgress.progress =
+          downloadVideoProgress.progress.floor() + 1;
+      continue;
     }
 
     // FIXME: right type of doc comment?
@@ -337,6 +367,8 @@ void main(List<String> arguments) async {
           'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
     }
   }
+
+  // TODO: check for yt-dlp updates. Out-of-date versions oftentimes causes random HTTP 403 Forbidden errors
 
   // We need playlist_id if the user is intending to choose this mode, but we don't explicitly need output_dir to be set
   if ((playlistId ?? '').isNotEmpty) {
