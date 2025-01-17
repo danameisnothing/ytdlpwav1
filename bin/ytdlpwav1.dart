@@ -126,52 +126,58 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   for (final videoData in videoInfos) {
     final res = downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData);
     final resBroadcast = res.asBroadcastStream();
-    await for (final info in resBroadcast) {
+
+    resBroadcast.forEach((info) async {
       // FIXNME: Cleanup
       settings.logger.info(info);
 
-      if (info.msgType == DownloadProgressMessageType.subtitle) subtitleFp.add(info.message! as String);
-      if (info.msgType == DownloadProgressMessageType.videoFinal) endVideoPath = info.message! as String;
-
-      if (info.msgType == DownloadProgressMessageType.completed) {
-        // FIXME: only for now! we have not implemented the other download option yet!
-        downloadVideoProgress.increment();
-
-        // DEBUGGING LOGIC!
-        // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-        for (final path in subtitleFp) {
-          await File(path).delete();
-          settings.logger.info(
-              'Deleted subtitle file on path $path'); // FIXME: change to fine
-        }
-        if (endVideoPath != null) {
-          await File(endVideoPath).delete();
-          settings.logger.info(
-              'Deleted video file on path $endVideoPath'); // FIXME: change to fine
-        }
-
-        switch (info.message) {
-          case DownloadReturnStatus.processNonZeroExit:
-            settings.logger.warning(
-              'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
-            break;
-          case DownloadReturnStatus.progressStateStayedUninitialized:
-            settings.logger.warning(
-              'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
-            break;
-        }
-
-        // FIXME: only for now! we have not implemented the other download option yet!
-        continue;
+      if (info.msgType == DownloadProgressMessageType.subtitle) {
+        subtitleFp.add(info.message! as String);
       }
+      if (info.msgType == DownloadProgressMessageType.videoFinal) {
+        endVideoPath = info.message! as String;
+      }
+    });
+
+    final lastRet = await resBroadcast.last;
+
+    // FIXME: only for now! we have not implemented the other download option yet!
+    downloadVideoProgress.increment();
+
+    // DEBUGGING LOGIC!
+    // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
+    for (final path in subtitleFp) {
+      await File(path).delete();
+      settings.logger
+          .info('Deleted subtitle file on path $path'); // FIXME: change to fine
+    }
+    if (endVideoPath != null) {
+      await File(endVideoPath!).delete();
+      settings.logger.info(
+          'Deleted video file on path $endVideoPath'); // FIXME: change to fine
     }
 
-    settings.logger.info(await resBroadcast.last);
+    switch (lastRet.message) {
+      case DownloadReturnStatus.processNonZeroExit:
+        settings.logger.warning(
+            'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+        // FIXME: intentionally commented out, remove when we have implemented the other download options!
+        // FIXME: only for now! we have not implemented the other download option yet!
+        continue;
+      //break;
+      case DownloadReturnStatus.progressStateStayedUninitialized:
+        settings.logger.warning(
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+        // FIXME: intentionally commented out, remove when we have implemented the other download options!
+        // FIXME: only for now! we have not implemented the other download option yet!
+        continue;
+      //break;
+    }
 
     // FIXME: right type of doc comment?
-          /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
-          /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
-          /* final standalonePartProgStr = (double.parse(
+    /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
+    /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
+    /* final standalonePartProgStr = (double.parse(
                       (progressOut["percentage"] as String)
                           .trim()
                           .replaceFirst(RegExp(r'%'), '')) /
@@ -259,8 +265,6 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
               (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr);
         }
       } */
-    }
-
     // TODO: save progress on every loop!
 
     // TODO: FFMPEG LOGIC
@@ -270,16 +274,14 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         .toList();
     settings.logger.fine(
         'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $ffmpegExtrThmbCmd');
-    final dvbProc = await Process.start(
-        ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd);
-
+    final dvbProc =
+        await Process.start(ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd);
     /*final broadcastStreams =
         implantDebugLoggerReturnBackStream(dvbProc, 'ffmpeg');*/
+  }
+  periodic.cancel();
+  await downloadVideoProgress.finishRender();
 }
-
-  /* periodic.cancel();
-  await downloadVideoProgress.finishRender(); */
-
 
 void main(List<String> arguments) async {
   Logger.root.level = Level.INFO;
@@ -313,7 +315,8 @@ void main(List<String> arguments) async {
 
   if (!await File(cookieFile!).exists()) hardExit('Invalid cookie path given');
 
-  initSettings(cookieFile: cookieFile, playlistId: playlistId, outputDir: outDir);
+  initSettings(
+      cookieFile: cookieFile, playlistId: playlistId, outputDir: outDir);
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
