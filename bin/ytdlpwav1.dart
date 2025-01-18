@@ -16,6 +16,11 @@ import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
+// TODO:
+class DownloadVideosUIData {
+  ProgressState downloadState;
+}
+
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
   final videoDataFile = File(videoDataFileName);
   if (await videoDataFile.exists()) {
@@ -106,20 +111,60 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           .toList();
   settings.logger.fine('Retrieved video data as $videoInfos');
 
+  // Inits a default value to not crash when we have not received any message related to downloading stuff from yt-dlp
+  ({
+    DownloadProgressMessageType? msgType,
+    Object? message,
+    ProgressState? progress
+  }) ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);
+
   final downloadVideoProgress =
       ProgressBar(top: videoInfos.length, innerWidth: 32);
   final periodic =
       Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
-    await downloadVideoProgress.renderInLine((total, current) {
+    late final String videoAudioClassification;
+    switch (ytdlpDownloadDataUI.progress) {
+      case null:
+        videoAudioClassification = 'fuck';
+        break;
+      case ProgressState.uninitialized:
+        videoAudioClassification = 'UNIT';
+        break;
+      case ProgressState.caption:
+        videoAudioClassification = chalk.magentaBright('(caption)');
+        break;
+      case ProgressState.video:
+        videoAudioClassification = chalk.blueBright('(video)');
+        break;
+      case ProgressState.audio:
+        videoAudioClassification = chalk.greenBright('(audio)');
+        break;
+    }
+
+    final finStr =
+        """Downloading : ${chalk.brightCyan("Cult of the Lamb.webm")} $videoAudioClassification
+""";
+
+    final splitted = finStr.split('\n');
+    for (final line in splitted) {
+      stdout.writeln(line);
+    }
+
+    stdout.write('\x1b[${splitted.length}A');
+    await stdout.flush();
+    /*await downloadVideoProgress.renderInLine((total, current) {
       final percStr =
           chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
       final partStr = chalk.brightMagenta(
           '${current.toStringAsFixed(0)}/${total.toStringAsFixed(0)}');
       return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · ${chalk.brightGreen('WOOL_OVER_OUR_EYES_Cult_of_the_Lamb_Song.f399.mp4')}'; // TODO: ADD ETA LOGIC!
-    });
+    });*/
   }).listen((_) => 0);
 
   for (final videoData in videoInfos) {
+    // Reset data for the UI to update accordingly (as if it is empty)
+    ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);
+
     final subtitleFp = <String>[];
     // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
     String? endVideoPath;
@@ -130,6 +175,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     resBroadcast.forEach((info) async {
       // FIXME: Cleanup
       settings.logger.info(info);
+      ytdlpDownloadDataUI = info;
 
       if (info.msgType == DownloadProgressMessageType.subtitle) {
         subtitleFp.add(info.message! as String);
@@ -154,6 +200,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           downloadVideoProgress.progress.truncate() +
               (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
 
+      // FIXME:
       switch (info.msgType) {
         case DownloadProgressMessageType.videoProgress:
           downloadVideoProgress.progress =
@@ -165,6 +212,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
               downloadVideoProgress.progress.truncate() +
                   (((1 / 4) * 1) + standalonePartProgStr);
         default:
+          break;
       }
     });
 
@@ -298,14 +346,14 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     // TODO: save progress on every loop!
 
     // TODO: FFMPEG LOGIC
-    final ffmpegExtrThmbCmd = cmd_split_args
+    /* final ffmpegExtrThmbCmd = cmd_split_args
         .split(ffmpegExtractThumbnailCmd.replaceAll(
             RegExp(r'<video_input>'), cookieFile))
         .toList();
     settings.logger.fine(
         'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $ffmpegExtrThmbCmd');
     final dvbProc =
-        await Process.start(ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd);
+        await Process.start(ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd); */
     /*final broadcastStreams =
         implantDebugLoggerReturnBackStream(dvbProc, 'ffmpeg');*/
   }
