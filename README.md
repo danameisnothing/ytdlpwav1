@@ -1,1 +1,2 @@
-A sample command-line application providing basic argument parsing with an entrypoint in `bin/`.
+# ytdlpwav1
+A program to download videos from a YouTube playlist, with every downloaded video already-encoded with AV1, and Opus for audio. This program enforces this rule, even if that means re-encoding. This program relies on FFmpeg and yt-dlp being installed and added to PATH.
