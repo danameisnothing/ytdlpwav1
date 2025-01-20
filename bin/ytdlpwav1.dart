@@ -415,7 +415,7 @@ void main(List<String> arguments) async {
           'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
     }
   }
-
+  // TODO: Where the hell is the detection logic for FFmpeg?
   // TODO: check for yt-dlp updates. Out-of-date versions oftentimes causes random HTTP 403 Forbidden errors
 
   // We need playlist_id if the user is intending to choose this mode, but we don't explicitly need output_dir to be set
