@@ -5,6 +5,7 @@ import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
+// TODO: ENUM DOC!
 enum ProgressState { uninitialized, caption, video, audio }
 
 // TODO: ENUM DOC!
@@ -121,7 +122,7 @@ Stream<
           case ProgressState.audio:
             yield (
               msgType: retType,
-              message: progressOut["percentage"] as String,
+              message: progressOut,
               progress: progressState
             );
             break;

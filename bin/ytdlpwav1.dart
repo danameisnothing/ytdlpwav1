@@ -19,23 +19,38 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 // TODO: iterate further
 class DownloadVideosUIData {
   ProgressState? downloadState;
-  String? mediaTitle;
+  DownloadProgressMessageType? verboseDownloadState;
+  String mediaTitleOrVideoTitle;
+
+  /// To indicate whether we should display the video title in YouTube, or the downloaded media name
+  bool hasReceivedMediaUpdateEver;
   Object? stage; // TODO: implement, 1 / 4 - 4 / 4
-  double? totalMediaSize;
+
+  /// A variable that stores the updates that yt-dlp spits out
+  Map<String, dynamic>? updates;
 
   DownloadVideosUIData(
-      this.downloadState, this.mediaTitle, this.stage, this.totalMediaSize);
+      this.downloadState,
+      this.verboseDownloadState,
+      this.mediaTitleOrVideoTitle,
+      this.hasReceivedMediaUpdateEver,
+      this.stage,
+      this.updates);
 
   DownloadVideosUIData.empty()
       : downloadState = null,
-        mediaTitle = null,
+        verboseDownloadState = null,
+        mediaTitleOrVideoTitle = '',
+        hasReceivedMediaUpdateEver = false,
         stage = null,
-        totalMediaSize = null;
+        updates = null;
 
   void reset() {
     downloadState = null;
+    verboseDownloadState = null;
+    hasReceivedMediaUpdateEver = false;
     stage = null;
-    totalMediaSize = null;
+    updates = null;
   }
 }
 
@@ -164,9 +179,35 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         break;
     }
 
+    /* downloadVideoProgress.progress =
+          downloadVideoProgress.progress.truncate() +
+              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
+    if (ytdlpDownloadDataUI.updates != null) {
+      final progStr = ytdlpDownloadDataUI.updates!["percentage"] as String;
+
+      final standalonePartProgStr =
+          (double.parse(progStr.trim().replaceFirst(RegExp(r'%'), '')) / 100) /
+              4;
+
+      // FIXME:
+      switch (ytdlpDownloadDataUI.verboseDownloadState) {
+        case DownloadProgressMessageType.videoProgress:
+          downloadVideoProgress.progress =
+              downloadVideoProgress.progress.truncate() +
+                  (((1 / 4) * 0) + standalonePartProgStr);
+          break;
+        case DownloadProgressMessageType.audioProgress:
+          downloadVideoProgress.progress =
+              downloadVideoProgress.progress.truncate() +
+                  (((1 / 4) * 1) + standalonePartProgStr);
+        default:
+          break;
+      }
+    }
+
     final finStr =
-        """Downloading : ${chalk.brightCyan("Cult of the Lamb.webm")} $videoAudioClassification
-[${downloadVideoProgress.generateProgressBar()}] 69.42%
+        """Downloading : ${(ytdlpDownloadDataUI.hasReceivedMediaUpdateEver) ? '${chalk.brightCyan(ytdlpDownloadDataUI.mediaTitleOrVideoTitle)} ($videoAudioClassification)' : chalk.brightCyan(ytdlpDownloadDataUI.mediaTitleOrVideoTitle)}
+[${downloadVideoProgress.generateProgressBar()}] ${chalk.brightCyan('${downloadVideoProgress.progress}%')}
 Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
     final splitted = finStr.split('\n');
@@ -196,12 +237,15 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
     final res = downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData);
     final resBroadcast = res.asBroadcastStream();
 
+    ytdlpDownloadDataUI.mediaTitleOrVideoTitle = videoData.title;
+
     resBroadcast.forEach((info) async {
       // FIXME: Cleanup
       settings.logger.info(info);
 
       // FIXME: develop a method for doing this all at once
       ytdlpDownloadDataUI.downloadState = info.progress;
+      ytdlpDownloadDataUI.verboseDownloadState = info.msgType;
 
       if (info.msgType == DownloadProgressMessageType.subtitle) {
         subtitleFp.add(info.message! as String);
@@ -212,7 +256,8 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
       switch (info.progress) {
         case ProgressState.video:
         case ProgressState.audio:
-          ytdlpDownloadDataUI.mediaTitle = info.message as String;
+          ytdlpDownloadDataUI.mediaTitleOrVideoTitle = info.message
+              as String; // Assumed to be the downloaded media file name
           break;
         default:
           break;
@@ -221,33 +266,11 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
       switch (info.msgType) {
         case DownloadProgressMessageType.videoProgress:
         case DownloadProgressMessageType.audioProgress:
+          ytdlpDownloadDataUI.hasReceivedMediaUpdateEver = true;
+          ytdlpDownloadDataUI.updates = info.message as Map<String, dynamic>;
           break;
         default:
           return;
-      }
-
-      final progStr = info.message as String;
-
-      final standalonePartProgStr =
-          (double.parse(progStr.trim().replaceFirst(RegExp(r'%'), '')) / 100) /
-              4;
-      /* downloadVideoProgress.progress =
-          downloadVideoProgress.progress.truncate() +
-              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
-
-      // FIXME:
-      switch (info.msgType) {
-        case DownloadProgressMessageType.videoProgress:
-          downloadVideoProgress.progress =
-              downloadVideoProgress.progress.truncate() +
-                  (((1 / 4) * 0) + standalonePartProgStr);
-          break;
-        case DownloadProgressMessageType.audioProgress:
-          downloadVideoProgress.progress =
-              downloadVideoProgress.progress.truncate() +
-                  (((1 / 4) * 1) + standalonePartProgStr);
-        default:
-          break;
       }
     });
 
