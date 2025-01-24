@@ -16,9 +16,27 @@ import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
-// TODO:
+// TODO: iterate further
 class DownloadVideosUIData {
-  ProgressState downloadState;
+  ProgressState? downloadState;
+  String? mediaTitle;
+  Object? stage; // TODO: implement, 1 / 4 - 4 / 4
+  double? totalMediaSize;
+
+  DownloadVideosUIData(
+      this.downloadState, this.mediaTitle, this.stage, this.totalMediaSize);
+
+  DownloadVideosUIData.empty()
+      : downloadState = null,
+        mediaTitle = null,
+        stage = null,
+        totalMediaSize = null;
+
+  void reset() {
+    downloadState = null;
+    stage = null;
+    totalMediaSize = null;
+  }
 }
 
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
@@ -94,7 +112,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   }
 
   final outDir = passedOutDir ?? Directory.current.path;
-  // Exclusively for logging if you are wondering why this if statement is here
+  // Exclusivel y for logging if you are wondering why this if statement is here
   if (passedOutDir != outDir) {
     settings.logger.info('Using default path of current directory at $outDir');
   }
@@ -112,23 +130,28 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   settings.logger.fine('Retrieved video data as $videoInfos');
 
   // Inits a default value to not crash when we have not received any message related to downloading stuff from yt-dlp
-  ({
+  /*({
     DownloadProgressMessageType? msgType,
     Object? message,
     ProgressState? progress
-  }) ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);
+  }) ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);*/
+  final ytdlpDownloadDataUI = DownloadVideosUIData.empty();
 
-  final downloadVideoProgress =
-      ProgressBar(top: videoInfos.length, innerWidth: 32);
+  final downloadVideoProgress = ProgressBar(
+      top: videoInfos.length,
+      innerWidth: 32,
+      renderFunc: (total, current) {
+        return '[${ProgressBar.innerProgressBarIdent}]';
+      });
   final periodic =
       Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
     late final String videoAudioClassification;
-    switch (ytdlpDownloadDataUI.progress) {
+    switch (ytdlpDownloadDataUI.downloadState) {
       case null:
-        videoAudioClassification = 'fuck';
+        videoAudioClassification = 'fuck'; // TODO: remove
         break;
       case ProgressState.uninitialized:
-        videoAudioClassification = 'UNIT';
+        videoAudioClassification = 'UNIT'; // TODO: remove
         break;
       case ProgressState.caption:
         videoAudioClassification = chalk.magentaBright('(caption)');
@@ -143,7 +166,8 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
 
     final finStr =
         """Downloading : ${chalk.brightCyan("Cult of the Lamb.webm")} $videoAudioClassification
-""";
+[${downloadVideoProgress.generateProgressBar()}] 69.42%
+Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
     final splitted = finStr.split('\n');
     for (final line in splitted) {
@@ -162,8 +186,8 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   }).listen((_) => 0);
 
   for (final videoData in videoInfos) {
-    // Reset data for the UI to update accordingly (as if it is empty)
-    ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);
+    // Reset data for the UI to update accordingly
+    ytdlpDownloadDataUI.reset();
 
     final subtitleFp = <String>[];
     // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
@@ -175,12 +199,23 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     resBroadcast.forEach((info) async {
       // FIXME: Cleanup
       settings.logger.info(info);
-      ytdlpDownloadDataUI = info;
+
+      // FIXME: develop a method for doing this all at once
+      ytdlpDownloadDataUI.downloadState = info.progress;
 
       if (info.msgType == DownloadProgressMessageType.subtitle) {
         subtitleFp.add(info.message! as String);
       } else if (info.msgType == DownloadProgressMessageType.videoFinal) {
         endVideoPath = info.message! as String;
+      }
+
+      switch (info.progress) {
+        case ProgressState.video:
+        case ProgressState.audio:
+          ytdlpDownloadDataUI.mediaTitle = info.message as String;
+          break;
+        default:
+          break;
       }
 
       switch (info.msgType) {

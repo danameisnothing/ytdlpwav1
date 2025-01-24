@@ -52,12 +52,16 @@ class ProgressBar {
 
   bool isCompleted() => (_progress - _top).abs() <= 0.0001;
 
+  // FIXME: get rid
   String generateInnerProgressBarDefault(num curr, num top, int targetWidth) {
     final activePortionScaled = map(curr, 0, top, 0, targetWidth)
         .floor(); // Amount of space occupied by active sections
     return '${chalk.brightGreen(List.filled(activePortionScaled, _activeChar).join())}${List.filled(map(top, 0, top, 0, targetWidth).floor() - activePortionScaled, ' ').join()}'
         .replaceFirst(RegExp(r' '), chalk.brightGreen(_activeLeadingChar));
   }
+
+  String generateProgressBar() =>
+      generateInnerProgressBarDefault(_progress, _top, _innerWidth);
 
   String formatPartStringNoColorDefault(num curr, num top) {
     // All this logic is to make sure that if either top or current is set as a double, then both of them should display as a decimal
@@ -72,18 +76,18 @@ class ProgressBar {
   }
 
   Future renderInLine([String Function(num, num)? renderFuncIn]) async {
-    try {
-      late String str;
-      if (renderFuncIn == null) {
-        if (_renderFunc == null) {
-          throw Exception(
-              'Override function not given in constructor and function');
-        }
-        str = _renderFunc(_top, _progress);
-      } else {
-        str = renderFuncIn(_top, _progress);
+    late String str;
+    if (renderFuncIn == null) {
+      if (_renderFunc == null) {
+        throw Exception(
+            'Override function not given in constructor and function');
       }
+      str = _renderFunc(_top, _progress);
+    } else {
+      str = renderFuncIn(_top, _progress);
+    }
 
+    try {
       str = str.replaceFirst(
           RegExp(innerProgressBarIdent),
           (_innerProgressBarOverrideFunc == null)
