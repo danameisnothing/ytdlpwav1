@@ -6,7 +6,15 @@ import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
 // TODO: ENUM DOC!
-enum ProgressState { uninitialized, caption, video, audio }
+enum ProgressState {
+  /// Uninitialized means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
+  uninitialized,
+
+  /// We have downloaded all of the captions
+  caption,
+  video,
+  audio
+}
 
 // TODO: ENUM DOC!
 enum DownloadProgressMessageType {
@@ -24,6 +32,12 @@ enum DownloadReturnStatus {
   progressStateStayedUninitialized
 }
 
+/*class DownloadStatus {
+  final DownloadProgressMessageType msgType;
+  final Object? message;
+  final ProgressState progress;
+}*/
+
 // TODO: cleanup
 Stream<
         ({
@@ -34,7 +48,7 @@ Stream<
     downloadBestConfAndRetrieveCaptionFilesAndVideoFile(
         VideoInPlaylist videoData) async* {
   // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
-  final downloadVideoBestCmd = cmd_split_args
+  /*final downloadVideoBestCmd = cmd_split_args
       .split(videoBestCmd
           .replaceAll(RegExp(r'<cookie_file>'), settings.cookieFilePath!)
           .replaceAll(RegExp(r'<video_id>'), videoData.id)
@@ -46,7 +60,14 @@ Stream<
   final vbProc = await Process.start(
       downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
 
-  final broadcastStreams = implantDebugLoggerReturnBackStream(vbProc, 'yt-dlp');
+  final broadcastStreams = implantDebugLoggerReturnBackStream(vbProc, 'yt-dlp');*/
+
+  final proc = await settings.runner
+      .spawn(name: 'yt-dlp', argument: videoBestCmd, replacements: {
+    TemplateReplacements.cookieFile: settings.cookieFilePath!,
+    TemplateReplacements.videoId: videoData.id,
+    TemplateReplacements.outputDir: settings.outputDirPath!
+  });
 
   // FIXME: right type of doc comment?
   /// Holds the state for which is used to track what state the progress is in
@@ -58,7 +79,7 @@ Stream<
       .uninitialized; // Holds the state of which the logging must be done
 
   // FIXME: move out of this func?
-  await for (final tmpO in broadcastStreams.stdout) {
+  await for (final tmpO in proc.stdout) {
     // There can be multiple lines in 1 stdout message
     for (final output in String.fromCharCodes(tmpO).split('\n')) {
       if (RegExp(r'\[download\]').hasMatch(output) && output.endsWith('.vtt')) {
@@ -133,7 +154,7 @@ Stream<
     }
   }
 
-  if (await vbProc.exitCode != 0) {
+  if (await proc.process.exitCode != 0) {
     yield (
       msgType: DownloadProgressMessageType.completed,
       message: DownloadReturnStatus.processNonZeroExit,

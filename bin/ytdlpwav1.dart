@@ -256,6 +256,7 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
       switch (info.progress) {
         case ProgressState.video:
         case ProgressState.audio:
+          // FIXME: this is now crashing!
           ytdlpDownloadDataUI.mediaTitleOrVideoTitle = info.message
               as String; // Assumed to be the downloaded media file name
           break;
@@ -449,10 +450,15 @@ void main(List<String> arguments) async {
     hardExit('"cookie_file" argument not specified or empty');
   }
 
-  if (!await File(cookieFile!).exists()) hardExit('Invalid cookie path given');
+  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
 
   initSettings(
       cookieFile: cookieFile, playlistId: playlistId, outputDir: outDir);
+  ProcessSignal.sigint.watch().listen((_) {
+    settings.logger.info('Received SIGINT, cleaning up');
+    settings.runner.killAll();
+    exit(0);
+  });
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
