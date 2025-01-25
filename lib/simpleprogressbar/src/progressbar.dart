@@ -7,7 +7,7 @@ import 'package:chalkdart/chalk.dart';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 
 // Based off of the progressbar2 package (https://pub.dev/packages/progressbar2)
-class ProgressBar {
+final class ProgressBar {
   static final String innerProgressBarIdent = '<innerprogressbar>';
 
   final num _top;

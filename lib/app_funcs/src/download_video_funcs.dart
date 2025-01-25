@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
@@ -9,73 +10,108 @@ import 'package:ytdlpwav1/app_settings/app_settings.dart';
 enum ProgressState {
   /// Uninitialized means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
   uninitialized,
-
-  /// We have downloaded all of the captions
-  caption,
-  video,
-  audio
+  captionDownloaded,
+  videoDownloading,
+  videoDownloaded,
+  audioDownloading,
+  audioDownloaded,
+  videoAudioMerged
 }
 
-// TODO: ENUM DOC!
-enum DownloadProgressMessageType {
-  subtitle,
-  videoProgress,
-  videoFinal,
-  audioProgress,
-  endVideo,
-  completed
-} // 'Completed' is the final ever message from the download function
+abstract class DownloadReturnStatus {
+  DownloadReturnStatus();
 
-enum DownloadReturnStatus {
-  success,
-  processNonZeroExit,
-  progressStateStayedUninitialized
+  factory DownloadReturnStatus.captionDownloaded(
+          final String captionFilePath) =>
+      CaptionDownloadedMessage(captionFilePath);
+  factory DownloadReturnStatus.videoDownloading(
+          final Map<String, dynamic> jsonProgressData) =>
+      VideoDownloadingMessage(jsonProgressData);
+  factory DownloadReturnStatus.videoDownloaded(final String videoFilePath) =>
+      VideoDownloadedMessage(videoFilePath);
+  factory DownloadReturnStatus.audioDownloading(
+          final Map<String, dynamic> jsonProgressData) =>
+      AudioDownloadingMessage(jsonProgressData);
+  factory DownloadReturnStatus.audioDownloaded(final String audioFilePath) =>
+      AudioDownloadedMessage(audioFilePath);
+  factory DownloadReturnStatus.videoAudioMerged(
+          final String finalVideoFilePath) =>
+      VideoAudioMergedMessage(finalVideoFilePath);
+  factory DownloadReturnStatus.processNonZeroExit(final int eCode) =>
+      ProcessNonZeroExitMessage(eCode);
+  factory DownloadReturnStatus.progressStateStayedUninitialized() =>
+      ProgressStateStayedUninitializedMessage();
+  factory DownloadReturnStatus.success() => SuccessMessage();
 }
 
-/*class DownloadStatus {
-  final DownloadProgressMessageType msgType;
-  final Object? message;
-  final ProgressState progress;
-}*/
+final class CaptionDownloadedMessage extends DownloadReturnStatus {
+  final String captionFilePath;
+
+  CaptionDownloadedMessage(this.captionFilePath) : super();
+}
+
+final class VideoDownloadingMessage extends DownloadReturnStatus {
+  final Map<String, dynamic> progressData;
+
+  VideoDownloadingMessage(this.progressData) : super();
+}
+
+final class VideoDownloadedMessage extends DownloadReturnStatus {
+  final String videoFilePath;
+
+  VideoDownloadedMessage(this.videoFilePath) : super();
+}
+
+final class AudioDownloadingMessage extends DownloadReturnStatus {
+  final Map<String, dynamic> progressData;
+
+  AudioDownloadingMessage(this.progressData) : super();
+}
+
+final class AudioDownloadedMessage extends DownloadReturnStatus {
+  final String audioFilePath;
+
+  AudioDownloadedMessage(this.audioFilePath) : super();
+}
+
+final class VideoAudioMergedMessage extends DownloadReturnStatus {
+  final String finalVideoFilePath;
+
+  VideoAudioMergedMessage(this.finalVideoFilePath) : super();
+}
+
+final class ProcessNonZeroExitMessage extends DownloadReturnStatus {
+  final int eCode;
+
+  ProcessNonZeroExitMessage(this.eCode) : super();
+}
+
+final class ProgressStateStayedUninitializedMessage
+    extends DownloadReturnStatus {
+  ProgressStateStayedUninitializedMessage() : super();
+}
+
+final class SuccessMessage extends DownloadReturnStatus {
+  SuccessMessage() : super();
+}
 
 // TODO: cleanup
-Stream<
-        ({
-          DownloadProgressMessageType msgType,
-          Object? message,
-          ProgressState progress
-        })>
+Stream<DownloadReturnStatus>
     downloadBestConfAndRetrieveCaptionFilesAndVideoFile(
         VideoInPlaylist videoData) async* {
-  // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
-  /*final downloadVideoBestCmd = cmd_split_args
-      .split(videoBestCmd
-          .replaceAll(RegExp(r'<cookie_file>'), settings.cookieFilePath!)
-          .replaceAll(RegExp(r'<video_id>'), videoData.id)
-          .replaceAll(RegExp(r'<output_dir>'), settings.outputDirPath!))
-      .map((str) => str.replaceAll(RegExp('\''), '"'))
-      .toList();
-  settings.logger.fine(
-      'Starting yt-dlp process for downloading videos using argument $downloadVideoBestCmd');
-  final vbProc = await Process.start(
-      downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
+  final proc = await ProcessRunner.spawn(
+      name: 'yt-dlp',
+      argument: videoBestCmd,
+      replacements: {
+        TemplateReplacements.cookieFile: Preferences.cookieFilePath!,
+        TemplateReplacements.videoId: videoData.id,
+        TemplateReplacements.outputDir: Preferences.outputDirPath!
+      });
+  Preferences.logger.fine(
+      'Started yt-dlp process for downloading video with best configuration');
 
-  final broadcastStreams = implantDebugLoggerReturnBackStream(vbProc, 'yt-dlp');*/
-
-  final proc = await settings.runner
-      .spawn(name: 'yt-dlp', argument: videoBestCmd, replacements: {
-    TemplateReplacements.cookieFile: settings.cookieFilePath!,
-    TemplateReplacements.videoId: videoData.id,
-    TemplateReplacements.outputDir: settings.outputDirPath!
-  });
-
-  // FIXME: right type of doc comment?
-  /// Holds the state for which is used to track what state the progress is in
-  /// For example, if the state is [ProgressState.video], it is currently downloading video
-  /// Likewise, [ProgressState.audio] means it is currently downloading audio
-  /// In this case, it is used to keep track of progress to display to the user
-  /// [ProgressState.uninitialized] just means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
-  ProgressState progressState = ProgressState
+  // FIXME: swap with a class or something, like the sealed class that we have been using up until now?
+  ProgressState state = ProgressState
       .uninitialized; // Holds the state of which the logging must be done
 
   // FIXME: move out of this func?
@@ -83,98 +119,65 @@ Stream<
     // There can be multiple lines in 1 stdout message
     for (final output in String.fromCharCodes(tmpO).split('\n')) {
       if (RegExp(r'\[download\]').hasMatch(output) && output.endsWith('.vtt')) {
-        final foundSubFn = output.split(' ').elementAt(2);
-        settings.logger.info(foundSubFn); // FIXME: change to fine
-        progressState = ProgressState.caption;
-        yield (
-          msgType: DownloadProgressMessageType.subtitle,
-          message: foundSubFn,
-          progress: progressState
-        );
+        state = ProgressState.captionDownloaded;
+
+        final foundCaptFn = output.split(' ').elementAt(2);
+        Preferences.logger
+            .info("Found caption file : $foundCaptFn"); // FIXME: change to fine
+        yield DownloadReturnStatus.captionDownloaded(foundCaptFn);
       }
       if (RegExp(r'\[Merger\]').hasMatch(output)) {
+        state = ProgressState.videoAudioMerged;
+
         // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
         final endVideoFp =
             RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
-        settings.logger
-            .info('found end video $endVideoFp'); // FIXME: change to finex`
-        yield (
-          msgType: DownloadProgressMessageType.videoFinal,
-          message: endVideoFp,
-          progress: progressState
-        );
+        Preferences.logger
+            .info('Found merged video : $endVideoFp'); // FIXME: change to fine
+        yield DownloadReturnStatus.videoAudioMerged(endVideoFp);
       }
 
-      // TEMP ALTERNATIVE MODE!
+      // FIXME: TEMP ALTERNATIVE MODE!
+      // This output is actually yt-dlp choosing the target directory before downloading the media
       if (RegExp(r'\[download\]').hasMatch(output) &&
           (output.endsWith('.mkv') ||
               output.endsWith('.webm') ||
               output.endsWith('.mp4'))) {
-        if (progressState == ProgressState.uninitialized) {
-          progressState = ProgressState.video;
+        if (state == ProgressState.uninitialized) {
+          state = ProgressState.videoDownloading;
+          Preferences.logger.info(
+              'Found video soon-to-be downloaded : $output'); // FIXME: change to fine
         } else {
-          progressState = ProgressState.audio;
+          state = ProgressState.audioDownloading;
+          Preferences.logger.info(
+              'Found audio soon-to-be downloaded : $output'); // FIXME: change to fine
         }
-
-        settings.logger.info('found $output'); // FIXME: change to fine
       }
 
       final progressOut = decodeJSONOrFail(output);
-      if (progressOut != null && progressState != ProgressState.uninitialized) {
-        settings.logger.info(
-            'json: $progressOut on mode $progressState'); // FIXME: change to fine
-
-        // FIXME: improve?
-        late final DownloadProgressMessageType retType;
-        switch (progressState) {
-          case ProgressState.video:
-            retType = DownloadProgressMessageType.videoProgress;
-            break;
-          case ProgressState.audio:
-            retType = DownloadProgressMessageType.audioProgress;
-            break;
-          default:
-            break;
-        }
+      if (progressOut != null && state != ProgressState.uninitialized) {
+        Preferences.logger.info(
+            'yt-dlp JSON output : $progressOut on mode $state'); // FIXME: change to fine
 
         // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
-        switch (progressState) {
-          case ProgressState.video:
-          case ProgressState.audio:
-            yield (
-              msgType: retType,
-              message: progressOut,
-              progress: progressState
-            );
-            break;
-          default:
-            break;
+        if (state == ProgressState.videoDownloading) {
+          yield DownloadReturnStatus.videoDownloading(progressOut);
+        } else if (state == ProgressState.audioDownloading) {
+          yield DownloadReturnStatus.audioDownloading(progressOut);
         }
       }
     }
   }
 
   if (await proc.process.exitCode != 0) {
-    yield (
-      msgType: DownloadProgressMessageType.completed,
-      message: DownloadReturnStatus.processNonZeroExit,
-      progress: progressState
-    );
+    yield DownloadReturnStatus.processNonZeroExit(await proc.process.exitCode);
     return;
   }
-  if (progressState == ProgressState.uninitialized) {
-    yield (
-      msgType: DownloadProgressMessageType.completed,
-      message: DownloadReturnStatus.progressStateStayedUninitialized,
-      progress: progressState
-    );
+  if (state == ProgressState.uninitialized) {
+    yield DownloadReturnStatus.progressStateStayedUninitialized();
     return;
   }
 
-  yield (
-    msgType: DownloadProgressMessageType.completed,
-    message: DownloadReturnStatus.success,
-    progress: progressState
-  );
+  yield DownloadReturnStatus.success();
   return;
 }

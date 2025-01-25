@@ -12,7 +12,7 @@ double map(num value, num istart, num istop, num ostart, num ostop) {
 }
 
 Never hardExit(String msg) {
-  settings.logger.severe(msg);
+  Preferences.logger.severe(msg);
   exit(1);
 }
 
@@ -30,9 +30,9 @@ Map<String, dynamic>? decodeJSONOrFail(String str) {
   final stderrBroadcast = proc.stderr.asBroadcastStream();
   final stdoutBroadcast = proc.stdout.asBroadcastStream();
 
-  stderrBroadcast.listen((e) => settings.logger
+  stderrBroadcast.listen((e) => Preferences.logger
       .fine('[$procNameToLog STDERR] ${String.fromCharCodes(e).trim()}'));
-  stdoutBroadcast.listen((e) => settings.logger
+  stdoutBroadcast.listen((e) => Preferences.logger
       .fine('[$procNameToLog STDOUT] ${String.fromCharCodes(e).trim()}'));
 
   return (stdout: stdoutBroadcast, stderr: stderrBroadcast);
@@ -48,16 +48,7 @@ String getFractNumberPartStr(num n) {
   return subFract.substring(1);
 }
 
-// wtf
-Future<String?> procAwaitFirstOutputHack(Stream<List<int>> stream) async {
-  await for (final e in stream) {
-    return String.fromCharCodes(e); // just get 1
-  }
-
-  return null;
-}
-
-class VideoInPlaylist {
+final class VideoInPlaylist {
   final String title;
   final String id;
   final String description;
@@ -86,6 +77,7 @@ class VideoInPlaylist {
   String toString() => toJson().toString();
 }
 
+// An enum containing the string to be replaced in the command templates
 enum TemplateReplacements {
   cookieFile(template: '<cookie_file>'),
   playlistId(template: '<playlist_id>'),
@@ -98,11 +90,11 @@ enum TemplateReplacements {
   final String template;
 }
 
-class ProcessRunner {
-  final List<Process> _processes = <Process>[];
+sealed class ProcessRunner {
+  static final List<Process> _processes = <Process>[];
 
   // TODO: doc
-  Future<
+  static Future<
           ({
             Stream<List<int>> stdout,
             Stream<List<int>> stderr,
@@ -130,22 +122,24 @@ class ProcessRunner {
               0)); // 2nd param is the arguments, without the yt-dlp element
 
     _processes.add(proc);
-    settings.logger.fine('ProcessRunner: $name spawned and added to list');
+    Preferences.logger
+        .fine('ProcessRunner: $name (${proc.pid}) spawned and added to list');
 
     proc.exitCode.then((ec) {
       _processes.remove(proc);
-      settings.logger.fine(
-          'ProcessRunner: $name completed with exit code $ec and removed from list');
+      Preferences.logger.fine(
+          'ProcessRunner: $name (${proc.pid}) completed with exit code $ec and removed from list');
     });
 
     final streams = implantDebugLoggerReturnBackStream(proc, name);
     return (stdout: streams.stdout, stderr: streams.stderr, process: proc);
   }
 
-  void killAll() {
+  // TODO: doc
+  static void killAll() {
     for (final proc in List.from(_processes)) {
       proc.kill(ProcessSignal.sigint);
-      settings.logger.fine('ProcessRunner: killed process $proc');
+      Preferences.logger.fine('ProcessRunner: killed process $proc');
       _processes.remove(proc);
     }
   }

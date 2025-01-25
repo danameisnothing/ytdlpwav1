@@ -17,7 +17,7 @@ import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
 // TODO: iterate further
-class DownloadVideosUIData {
+sealed class DownloadVideosUIData {
   ProgressState? downloadState;
   DownloadProgressMessageType? verboseDownloadState;
   String mediaTitleOrVideoTitle;
@@ -74,7 +74,7 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
         'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
   }
 
-  settings.logger.info('Fetched video quantity in playlist');
+  Preferences.logger.info('Fetched video quantity in playlist');
 
   final playlistFetchInfoProgress =
       ProgressBar(top: playlistQuantity!, innerWidth: 32);
@@ -109,12 +109,12 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   periodic.cancel();
   await playlistFetchInfoProgress.finishRender();
 
-  settings.logger.fine('End result is $videoInfos');
+  Preferences.logger.fine('End result is $videoInfos');
 
   final convertedRes =
       jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()});
 
-  settings.logger.fine('Converted video info map to $convertedRes');
+  Preferences.logger.fine('Converted video info map to $convertedRes');
 
   await videoDataFile.writeAsString(convertedRes);
 }
@@ -129,7 +129,8 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   final outDir = passedOutDir ?? Directory.current.path;
   // Exclusivel y for logging if you are wondering why this if statement is here
   if (passedOutDir != outDir) {
-    settings.logger.info('Using default path of current directory at $outDir');
+    Preferences.logger
+        .info('Using default path of current directory at $outDir');
   }
 
   // For checking the user-supplied path
@@ -142,7 +143,7 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
       (jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>)
           .map((e) => VideoInPlaylist.fromJson(e))
           .toList();
-  settings.logger.fine('Retrieved video data as $videoInfos');
+  Preferences.logger.fine('Retrieved video data as $videoInfos');
 
   // Inits a default value to not crash when we have not received any message related to downloading stuff from yt-dlp
   /*({
@@ -150,7 +151,6 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
     Object? message,
     ProgressState? progress
   }) ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);*/
-  final ytdlpDownloadDataUI = DownloadVideosUIData.empty();
 
   final downloadVideoProgress = ProgressBar(
       top: videoInfos.length,
@@ -241,7 +241,13 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
     resBroadcast.forEach((info) async {
       // FIXME: Cleanup
-      settings.logger.info(info);
+      Preferences.logger.info(info);
+
+      switch (info) {
+        case VideoDownloadingMessage():
+          ytdlpDownloadDataUI.downloadState = ProgressState.audio;
+          break;
+      }
 
       // FIXME: develop a method for doing this all at once
       ytdlpDownloadDataUI.downloadState = info.progress;
@@ -281,28 +287,28 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
     for (final path in subtitleFp) {
       await File(path).delete();
-      settings.logger
+      Preferences.logger
           .info('Deleted subtitle file on path $path'); // FIXME: change to fine
     }
     if (endVideoPath != null) {
       await File(endVideoPath!).delete();
-      settings.logger.info(
+      Preferences.logger.info(
           'Deleted video file on path $endVideoPath'); // FIXME: change to fine
     }
 
     switch (lastRet.message) {
       case DownloadReturnStatus.processNonZeroExit:
-        settings.logger.warning(
+        Preferences.logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         break;
       case DownloadReturnStatus.progressStateStayedUninitialized:
-        settings.logger.warning(
+        Preferences.logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
         break;
     }
 
     if (lastRet.message != DownloadReturnStatus.success) {
-      settings.logger.fine('Failure point reached');
+      Preferences.logger.fine('Failure point reached');
       // FIXME: only for now! we have not implemented the other download option yet!
 
       // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
@@ -421,8 +427,7 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 }
 
 void main(List<String> arguments) async {
-  Logger.root.level = Level.INFO;
-
+  // TODO: Add detection to livestreams on playlist, as that will show the underlying FFmpeg output, with seemingly none of the usual yt-dlp output regarding downloading
   final argParser = ArgParser();
   argParser.addOption('cookie_file',
       abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true);
@@ -438,7 +443,7 @@ void main(List<String> arguments) async {
   try {
     parsedArgs = argParser.parse(arguments);
   } on ArgParserException catch (_) {
-    // TODO: add help message for available commands?
+    // TODO: add help message for available commands
     hardExit('TODO LIST AVAILABLE COMMANDS');
   }
 
@@ -452,14 +457,15 @@ void main(List<String> arguments) async {
 
   if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
 
-  initSettings(
+  Preferences.initSettings(
       cookieFile: cookieFile, playlistId: playlistId, outputDir: outDir);
   ProcessSignal.sigint.watch().listen((_) {
-    settings.logger.info('Received SIGINT, cleaning up');
-    settings.runner.killAll();
+    Preferences.logger.info('Received SIGINT, cleaning up');
+    ProcessRunner.killAll();
     exit(0);
   });
 
+  Logger.root.level = Level.INFO;
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
     final logFile = File(debugLogFileName);

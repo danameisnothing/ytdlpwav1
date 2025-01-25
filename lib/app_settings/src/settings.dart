@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:chalkdart/chalk.dart';
 import 'package:logging/logging.dart';
-import 'package:ytdlpwav1/app_utils/app_utils.dart';
 
 // Do NOT alter the <cookie_file>, <playlist_id>, <video_id>, <video_input> and <output_dir> hardcoded strings.
 // https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/ (I am a dumbass)
@@ -22,47 +21,42 @@ const ffmpegExtractThumbnailCmd =
 const debugLogFileName = 'ytdlpwav1_debug_log.txt';
 const videoDataFileName = 'ytdlpwav1_video_data.json';
 
-class Preferences {
-  late final Logger logger;
-  final ProcessRunner runner = ProcessRunner();
-  final String? cookieFilePath;
-  final String? playlistId;
-  final String? outputDirPath;
+sealed class Preferences {
+  static late final Logger logger;
+  static String? cookieFilePath;
+  static String? playlistId;
+  static String? outputDirPath;
 
-  Preferences({this.cookieFilePath, this.playlistId, this.outputDirPath});
-}
+  static void initSettings(
+      {String? cookieFile, String? playlistId, String? outputDir}) {
+    Preferences.cookieFilePath = cookieFile;
+    Preferences.playlistId = playlistId;
+    Preferences.outputDirPath = outputDir;
 
-late final Preferences settings;
-
-void initSettings({String? cookieFile, String? playlistId, String? outputDir}) {
-  settings = Preferences(
-      cookieFilePath: cookieFile,
-      playlistId: playlistId,
-      outputDirPath: outputDir);
-
-  settings.logger = Logger('ytdlpwav1');
-  Logger.root.onRecord.listen((rec) {
-    String levelName = '[${rec.level.name}]';
-    switch (rec.level) {
-      case Level.INFO:
-        levelName = chalk.grey(levelName);
-        break;
-      case Level.WARNING:
-        levelName = chalk.yellowBright(levelName);
-        break;
-      case Level.SEVERE:
-        levelName = chalk.redBright('[ERROR]');
-        break;
-    }
-    if (rec.level == Level.FINE) {
-      final logFile =
-          File(debugLogFileName); // Guaranteed to exist at this point
-      logFile.writeAsStringSync(
-          '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
-          flush: true,
-          mode: FileMode.append);
-      return;
-    }
-    print('$levelName ${rec.message}');
-  });
+    Preferences.logger = Logger('ytdlpwav1');
+    Logger.root.onRecord.listen((rec) {
+      String levelName = '[${rec.level.name}]';
+      switch (rec.level) {
+        case Level.INFO:
+          levelName = chalk.grey(levelName);
+          break;
+        case Level.WARNING:
+          levelName = chalk.yellowBright(levelName);
+          break;
+        case Level.SEVERE:
+          levelName = chalk.redBright('[ERROR]');
+          break;
+      }
+      if (rec.level == Level.FINE) {
+        final logFile =
+            File(debugLogFileName); // Guaranteed to exist at this point
+        logFile.writeAsStringSync(
+            '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
+            flush: true,
+            mode: FileMode.append);
+        return;
+      }
+      print('$levelName ${rec.message}');
+    });
+  }
 }
