@@ -7,7 +7,6 @@ import 'package:ansi_strip/ansi_strip.dart';
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:chalkdart/chalk_x11.dart';
-import 'package:cli_spin/cli_spin.dart';
 import 'package:logging/logging.dart';
 
 import 'package:ytdlpwav1/app_settings/app_settings.dart' as app_settings;
@@ -45,13 +44,10 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   }
   await videoDataFile.create();
 
-  final spinnerProcessLaunching = CliSpin(spinner: CliSpinners.dots);
-
-  spinnerProcessLaunching.start('Waiting for yt-dlp output');
+  app_settings.Preferences.logger.info('Waiting for yt-dlp output');
   final playlistQuantity = await getPlaylistQuantity(cookieFile, playlistId);
-  spinnerProcessLaunching.stop();
-
   if (playlistQuantity == null) {
+    // TODO: improve error message
     hardExit(
         'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
   }
