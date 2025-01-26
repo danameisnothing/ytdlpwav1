@@ -3,20 +3,21 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:ansi_strip/ansi_strip.dart';
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:chalkdart/chalk_x11.dart';
 import 'package:cli_spin/cli_spin.dart';
 import 'package:logging/logging.dart';
 
-import 'package:ytdlpwav1/app_settings/app_settings.dart';
+import 'package:ytdlpwav1/app_settings/app_settings.dart' as app_settings;
 import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
     as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
-// TODO: iterate further
+// TODO: change to singleton?
 sealed class DownloadVideosUIData {
   static DownloadReturnStatus? lastReturnValue;
   static String? mediaTitleOrVideoTitle;
@@ -36,11 +37,11 @@ sealed class DownloadVideosUIData {
 }
 
 Future fetchVideosLogic(String cookieFile, String playlistId) async {
-  final videoDataFile = File(videoDataFileName);
+  final videoDataFile = File(app_settings.videoDataFileName);
   if (await videoDataFile.exists()) {
     hardExit(
-        'File $videoDataFileName already exists. Delete / rename the file and try again, or do not supply the "--playlist_id" option to start downloading videos');
-    // FIXME: actual confirmation prompt to overwrite the file!
+        'File ${app_settings.videoDataFileName} already exists. Delete / rename the file and try again, or do not supply the "--playlist_id" option to start downloading videos');
+    // TODO: actual confirmation prompt to overwrite the file!
   }
   await videoDataFile.create();
 
@@ -55,28 +56,10 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
         'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
   }
 
-  Preferences.logger.info('Fetched video quantity in playlist');
+  app_settings.Preferences.logger.info('Fetched video quantity in playlist');
 
   final playlistFetchInfoProgress =
-      ProgressBar(top: playlistQuantity!, innerWidth: 32);
-
-  final stopwatch = Stopwatch()..start();
-
-  // Thank you https://www.reddit.com/r/dartlang/comments/t8pcbd/stream_periodic_from_a_future/
-  final periodic =
-      Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
-    await playlistFetchInfoProgress.renderInLine((total, current) {
-      final normTime = stopwatch.elapsedMilliseconds / 1000;
-
-      final percStr =
-          chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
-      final partStr =
-          chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
-      final stopwatchStr =
-          chalk.darkTurquoise('Running for ${normTime.toStringAsFixed(3)}s');
-      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · $stopwatchStr'; // TODO: ADD ETA LOGIC!
-    });
-  }).listen((_) => 0);
+      ProgressBar(top: playlistQuantity, innerWidth: 32);
 
   final videoInfos = <VideoInPlaylist>[];
 
@@ -84,24 +67,30 @@ Future fetchVideosLogic(String cookieFile, String playlistId) async {
   await for (final videoInfo in res) {
     videoInfos.add(videoInfo);
     playlistFetchInfoProgress.increment();
+    // FIXME: TEST!
+    await playlistFetchInfoProgress.renderInLine((total, current) {
+      final percStr =
+          chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
+      final partStr =
+          chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
+    });
   }
-
-  stopwatch.stop();
-  periodic.cancel();
   await playlistFetchInfoProgress.finishRender();
 
-  Preferences.logger.fine('End result is $videoInfos');
+  app_settings.Preferences.logger.fine('End result is $videoInfos');
 
   final convertedRes =
       jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()});
 
-  Preferences.logger.fine('Converted video info map to $convertedRes');
+  app_settings.Preferences.logger
+      .fine('Converted video info map to $convertedRes');
 
   await videoDataFile.writeAsString(convertedRes);
 }
 
 Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
-  final videoDataFile = File(videoDataFileName);
+  final videoDataFile = File(app_settings.videoDataFileName);
   if (!await videoDataFile.exists()) {
     hardExit(
         'Video data file has not been created. Supply the "--playlist_id" option first before downloading the videos');
@@ -126,13 +115,6 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
           .toList();
   Preferences.logger.fine('Retrieved video data as $videoInfos');
 
-  // Inits a default value to not crash when we have not received any message related to downloading stuff from yt-dlp
-  /*({
-    DownloadProgressMessageType? msgType,
-    Object? message,
-    ProgressState? progress
-  }) ytdlpDownloadDataUI = (msgType: null, message: null, progress: null);*/
-
   final downloadVideoProgress = ProgressBar(
       top: videoInfos.length,
       innerWidth: 32,
@@ -141,71 +123,142 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
       });
   final periodic =
       Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
-    late final String videoAudioClassification;
+    // FIXME: all of these UI mapping stuff moved to separate function?
+    late final String? videoAudioMapping;
     switch (DownloadVideosUIData.lastReturnValue) {
       case CaptionDownloadedMessage():
-        videoAudioClassification = chalk.magentaBright('(caption)');
+        videoAudioMapping = chalk.magentaBright('(caption)');
         break;
       case VideoDownloadingMessage():
       case VideoDownloadedMessage():
-        videoAudioClassification = chalk.blueBright('(video)');
+        videoAudioMapping = chalk.blueBright('(video)');
         break;
       case AudioDownloadingMessage():
       case AudioDownloadedMessage():
-        videoAudioClassification = chalk.greenBright('(audio)');
+        videoAudioMapping = chalk.greenBright('(audio)');
         break;
       default:
-        throw Exception(); // FIXME: FOR DEBUGGING!
-      /*videoAudioClassification = 'YOU SHOULD NOT SEE THIS!'; // FIXME: remove
-        break;*/
+        videoAudioMapping = null;
+        break;
     }
 
-    /* downloadVideoProgress.progress =
-          downloadVideoProgress.progress.truncate() +
-              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
+    // FIXME: improve, is this even necessary?
+    // A variable that holds the progressData of lastReturnValue pulled from their respective classes
+    late final Map<String, dynamic>? progDataLocal;
+    switch (DownloadVideosUIData.lastReturnValue) {
+      case VideoDownloadingMessage():
+        progDataLocal =
+            (DownloadVideosUIData.lastReturnValue as VideoDownloadingMessage)
+                .progressData;
+        break;
+      case VideoDownloadedMessage():
+        progDataLocal =
+            (DownloadVideosUIData.lastReturnValue as VideoDownloadedMessage)
+                .progressData;
+        break;
+      case AudioDownloadingMessage():
+        progDataLocal =
+            (DownloadVideosUIData.lastReturnValue as AudioDownloadingMessage)
+                .progressData;
+        break;
+      case AudioDownloadedMessage():
+        progDataLocal =
+            (DownloadVideosUIData.lastReturnValue as AudioDownloadedMessage)
+                .progressData;
+        break;
+      default:
+        // They do not have the progressData field
+        progDataLocal = null;
+        break;
+    }
 
-    /*if (ytdlpDownloadDataUI.updates != null) {
-      final progStr = ytdlpDownloadDataUI.updates!["percentage"] as String;
+    final String? progStr =
+        (progDataLocal != null) ? progDataLocal['percentage'] : null;
 
+    // When we pass this check, the last message are either downloading / downloaded video / audio
+    if (progStr != null) {
       final standalonePartProgStr =
           (double.parse(progStr.trim().replaceFirst(RegExp(r'%'), '')) / 100) /
               4;
 
       // FIXME:
-      switch (ytdlpDownloadDataUI.verboseDownloadState) {
-        case DownloadProgressMessageType.videoProgress:
+      switch (DownloadVideosUIData.lastReturnValue) {
+        case VideoDownloadingMessage():
+        case VideoDownloadedMessage():
           downloadVideoProgress.progress =
               downloadVideoProgress.progress.truncate() +
-                  (((1 / 4) * 0) + standalonePartProgStr);
+                  ((((DownloadVideosUIData.stagePerVideo + 1) / 4) * 0) +
+                      standalonePartProgStr);
           break;
-        case DownloadProgressMessageType.audioProgress:
+        case AudioDownloadingMessage():
+        case AudioDownloadedMessage():
           downloadVideoProgress.progress =
               downloadVideoProgress.progress.truncate() +
-                  (((1 / 4) * 1) + standalonePartProgStr);
+                  ((((DownloadVideosUIData.stagePerVideo + 1) / 4) * 1) +
+                      standalonePartProgStr);
         default:
           break;
       }
-    }*/
-
-    final finStr =
-        """Downloading : ${(DownloadVideosUIData.hasReceivedMediaUpdateEver) ? '${chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!)} $videoAudioClassification' : chalk.brightCyan(chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!))}
-[${downloadVideoProgress.generateProgressBar()}] ${chalk.brightCyan('${downloadVideoProgress.progress}%')}
-Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
-
-    final splitted = finStr.split('\n');
-    for (final line in splitted) {
-      stdout.writeln(line);
     }
 
-    stdout.write('\x1b[${splitted.length}A');
+    late final String stageMapping;
+    switch (DownloadVideosUIData.stagePerVideo) {
+      case 0:
+        stageMapping = 'Downloading Video';
+        break;
+      case 1:
+        stageMapping = 'Downloading Audio';
+        break;
+      case 2:
+        stageMapping = 'TODO: FFMPEG'; // FIXME: REPLACE
+        break;
+      case 3:
+        stageMapping = 'TODO: TBA'; // FIXME: REPLACE
+        break;
+      default:
+        throw Exception(); // FIXME: remove, just for debugging in case something incremented beyond
+      // break;
+    }
+
+    late final String? bytesDownloadedMapping;
+    if (progDataLocal != null) {
+      final trm = (progDataLocal['bytes_downloaded'] as String).trim();
+      if (trm.contains('N/A')) {
+        bytesDownloadedMapping = null;
+      } else {
+        bytesDownloadedMapping = trm;
+      }
+    } else {
+      bytesDownloadedMapping = null;
+    }
+
+    late final String? bytesTotalMapping;
+    if (progDataLocal != null) {
+      final trm = (progDataLocal['bytes_total'] as String).trim();
+      if (trm.contains('N/A')) {
+        bytesTotalMapping = null;
+      } else {
+        bytesTotalMapping = trm;
+      }
+    } else {
+      bytesTotalMapping = null;
+    }
+
+    // FIXME: also check for mediaTitleOrVideoTitle is null, not required since if hasReceivedMediaUpdateEver is false, then this mediaTitleOrVideoTitle is null
+    final templateStr =
+        """Downloading : ${(DownloadVideosUIData.hasReceivedMediaUpdateEver && videoAudioMapping != null) ? '${chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!)} $videoAudioMapping' : chalk.brightCyan(chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!))}
+[${downloadVideoProgress.generateProgressBar()}] ${chalk.brightCyan('${map(downloadVideoProgress.progress, 0, downloadVideoProgress.top, 0, 100)}%')}
+Stage ${DownloadVideosUIData.stagePerVideo + 1}/4 $stageMapping\t${(bytesDownloadedMapping != null) ? bytesDownloadedMapping : '0.0MiB'}/${(bytesTotalMapping != null) ? bytesTotalMapping : '0.0MiB'}""";
+    final chunked = templateStr.split('\n').map((str) {
+      final strLen = stripAnsi(str).length;
+      // Handle us not having enough space to print the base message
+      // TODO: CHECK IF THIS IS FINE
+      return '$str${(stdout.terminalColumns < strLen) ? List.filled(stdout.terminalColumns, ' ').join() : List.filled(stdout.terminalColumns - strLen, ' ').join()}';
+    }).join('\n');
+
+    // Joined it all to prevent cursor jerking around
+    stdout.write('$chunked\r\x1b[${templateStr.split('\n').length}A');
     await stdout.flush();
-    /*await downloadVideoProgress.renderInLine((total, current) {
-      final percStr =
-          chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
-      final partStr = chalk.brightMagenta(
-          '${current.toStringAsFixed(0)}/${total.toStringAsFixed(0)}');
-      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr · ${chalk.brightGreen('WOOL_OVER_OUR_EYES_Cult_of_the_Lamb_Song.f399.mp4')}'; // TODO: ADD ETA LOGIC!
-    });*/
   }).listen((_) => 0);
 
   for (final videoData in videoInfos) {
@@ -215,8 +268,9 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
     DownloadVideosUIData.stagePerVideo = 0;
     DownloadVideosUIData.mediaTitleOrVideoTitle = videoData.title;
 
+    // Exclusively for deletion incase the process exited with a non-zero code
     final subtitleFp = <String>[];
-    // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
+    // This should only be reassigned once
     String? endVideoPath;
 
     final resBroadcast =
@@ -224,11 +278,9 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
             .asBroadcastStream();
 
     resBroadcast.forEach((info) async {
-      // FIXME: Cleanup
-      Preferences.logger.info(info);
-
       DownloadVideosUIData.lastReturnValue = info;
 
+      // FIXME: IMPROVE!
       switch (info) {
         case VideoDownloadingMessage():
           DownloadVideosUIData.hasReceivedMediaUpdateEver = true;
@@ -259,38 +311,33 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
     final lastRet = await resBroadcast.last;
 
-    // DEBUGGING LOGIC!
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-    for (final path in subtitleFp) {
-      await File(path).delete();
-      Preferences.logger
-          .info('Deleted subtitle file on path $path'); // FIXME: change to fine
-    }
-    if (endVideoPath != null) {
-      await File(endVideoPath!).delete();
-      Preferences.logger.info(
-          'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+    if (lastRet is! SuccessMessage) {
+      for (final path in subtitleFp) {
+        await File(path).delete();
+        Preferences.logger.info(
+            'Deleted subtitle file on path $path'); // FIXME: change to fine
+      }
+      if (endVideoPath != null) {
+        await File(endVideoPath!).delete();
+        Preferences.logger.info(
+            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+      }
     }
 
     switch (lastRet) {
       case ProcessNonZeroExitMessage():
         Preferences.logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+        // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+        downloadVideoProgress.progress =
+            downloadVideoProgress.progress.floor() + 1;
         break;
       case ProgressStateStayedUninitializedMessage():
         Preferences.logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
-        break;
-    }
-
-    if (lastRet is SuccessMessage) {
-      Preferences.logger.fine('Failure point reached');
-      // FIXME: only for now! we have not implemented the other download option yet!
-
-      // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
-      downloadVideoProgress.progress =
-          downloadVideoProgress.progress.floor() + 1;
-      continue;
+        exit(0); // FIXME: for dev purposes
+      //break;
     }
 
     // FIXME: right type of doc comment?
@@ -305,85 +352,6 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
           downloadVideoProgress.progress = downloadVideoProgress.progress
                   .truncate() +
               (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
-    /* // We use single quotes and replace them with double quotes once parsed to circumvent my basic parser (if we use double quotes, it will be stripped out by the parser)
-    final downloadVideoBestCmd = cmd_split_args
-        .split(videoBestCmd
-            .replaceAll(RegExp(r'<cookie_file>'), cookieFile)
-            .replaceAll(RegExp(r'<video_id>'), videoData.id)
-            .replaceAll(RegExp(r'<output_dir>'), outDir))
-        .map((str) => str.replaceAll(RegExp('\''), '"'))
-        .toList();
-    settings.logger.fine(
-        'Starting yt-dlp process for downloading videos using argument $downloadVideoBestCmd');
-    final vbProc = await Process.start(
-        downloadVideoBestCmd.removeAt(0), downloadVideoBestCmd);
-
-    final broadcastStreams =
-        implantDebugLoggerReturnBackStream(vbProc, 'yt-dlp');
-
-    final subtitleFilePaths = <String>[];
-    String? endVideoPath;
-
-    // FIXME: right type of doc comment?
-    /// Holds the state for which is used to track what state the progress is in
-    /// For example, if the state is [ProgressState.video], it is currently downloading video
-    /// Likewise, [ProgressState.audio] means it is currently downloading audio
-    /// In this case, it is used to keep track of progress to display to the user
-    /// [ProgressState.uninitialized] just means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
-    ProgressState progressState = ProgressState
-        .uninitialized; // Holds the state of which the logging must be done
-
-    // FIXME: move out of this func?
-    await for (final tmpO in broadcastStreams['stdout']!) {
-      // There can be multiple lines in 1 stdout message
-      for (final output in String.fromCharCodes(tmpO).split('\n')) {
-        if (RegExp(r'\[download\]').hasMatch(output) &&
-            output.endsWith('.vtt')) {
-          subtitleFilePaths.add(output.split(' ').elementAt(2));
-          settings.logger.info(subtitleFilePaths); // FIXME: change to fine
-        }
-        if (RegExp(r'\[Merger\]').hasMatch(output)) {
-          // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
-          endVideoPath =
-              RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
-          settings.logger
-              .info('found end video $endVideoPath'); // FIXME: change to fine
-        }
-
-        // TEMP ALTERNATIVE MODE!
-        if (RegExp(r'\[download\]').hasMatch(output) &&
-            (output.endsWith('.mkv') ||
-                output.endsWith('.webm') ||
-                output.endsWith('.mp4'))) {
-          if (progressState == ProgressState.uninitialized) {
-            progressState = ProgressState.video;
-          } else {
-            progressState = ProgressState.audio;
-          }
-
-          settings.logger.info('found $output'); // FIXME: change to fine
-        }
-
-        final progressOut = decodeJSONOrFail(output);
-        if (progressOut != null &&
-            progressState != ProgressState.uninitialized) {
-          settings.logger.info(
-              'json: $progressOut on mode $progressState'); // FIXME: change to fine
-
-          // FIXME: right type of doc comment?
-          /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
-          /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
-          final standalonePartProgStr = (double.parse(
-                      (progressOut["percentage"] as String)
-                          .trim()
-                          .replaceFirst(RegExp(r'%'), '')) /
-                  100) /
-              4;
-          downloadVideoProgress.progress = downloadVideoProgress.progress
-                  .truncate() +
-              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr);
-        }
-      } */
     // TODO: save progress on every loop!
 
     // TODO: FFMPEG LOGIC

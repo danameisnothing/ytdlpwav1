@@ -90,6 +90,7 @@ enum TemplateReplacements {
   final String template;
 }
 
+// TODO: change to singleton?
 sealed class ProcessRunner {
   static final List<Process> _processes = <Process>[];
 
