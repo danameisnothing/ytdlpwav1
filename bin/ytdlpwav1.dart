@@ -18,39 +18,20 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
 // TODO: iterate further
 sealed class DownloadVideosUIData {
-  ProgressState? downloadState;
-  DownloadProgressMessageType? verboseDownloadState;
-  String mediaTitleOrVideoTitle;
+  static DownloadReturnStatus? lastReturnValue;
+  static String? mediaTitleOrVideoTitle;
 
   /// To indicate whether we should display the video title in YouTube, or the downloaded media name
-  bool hasReceivedMediaUpdateEver;
-  Object? stage; // TODO: implement, 1 / 4 - 4 / 4
+  static bool hasReceivedMediaUpdateEver = false;
 
-  /// A variable that stores the updates that yt-dlp spits out
-  Map<String, dynamic>? updates;
+  /// A variable that indicates the current stage of the download process per video!
+  static int stagePerVideo = 0;
 
-  DownloadVideosUIData(
-      this.downloadState,
-      this.verboseDownloadState,
-      this.mediaTitleOrVideoTitle,
-      this.hasReceivedMediaUpdateEver,
-      this.stage,
-      this.updates);
-
-  DownloadVideosUIData.empty()
-      : downloadState = null,
-        verboseDownloadState = null,
-        mediaTitleOrVideoTitle = '',
-        hasReceivedMediaUpdateEver = false,
-        stage = null,
-        updates = null;
-
-  void reset() {
-    downloadState = null;
-    verboseDownloadState = null;
+  static void reset() {
+    lastReturnValue = null;
+    mediaTitleOrVideoTitle = null;
     hasReceivedMediaUpdateEver = false;
-    stage = null;
-    updates = null;
+    stagePerVideo = 0;
   }
 }
 
@@ -161,28 +142,29 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
   final periodic =
       Stream.periodic(const Duration(milliseconds: 10)).asyncMap((_) async {
     late final String videoAudioClassification;
-    switch (ytdlpDownloadDataUI.downloadState) {
-      case null:
-        videoAudioClassification = 'fuck'; // TODO: remove
-        break;
-      case ProgressState.uninitialized:
-        videoAudioClassification = 'UNIT'; // TODO: remove
-        break;
-      case ProgressState.caption:
+    switch (DownloadVideosUIData.lastReturnValue) {
+      case CaptionDownloadedMessage():
         videoAudioClassification = chalk.magentaBright('(caption)');
         break;
-      case ProgressState.video:
+      case VideoDownloadingMessage():
+      case VideoDownloadedMessage():
         videoAudioClassification = chalk.blueBright('(video)');
         break;
-      case ProgressState.audio:
+      case AudioDownloadingMessage():
+      case AudioDownloadedMessage():
         videoAudioClassification = chalk.greenBright('(audio)');
         break;
+      default:
+        throw Exception(); // FIXME: FOR DEBUGGING!
+      /*videoAudioClassification = 'YOU SHOULD NOT SEE THIS!'; // FIXME: remove
+        break;*/
     }
 
     /* downloadVideoProgress.progress =
           downloadVideoProgress.progress.truncate() +
               (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
-    if (ytdlpDownloadDataUI.updates != null) {
+
+    /*if (ytdlpDownloadDataUI.updates != null) {
       final progStr = ytdlpDownloadDataUI.updates!["percentage"] as String;
 
       final standalonePartProgStr =
@@ -203,10 +185,10 @@ Future downloadVideosLogic(String cookieFile, String? passedOutDir) async {
         default:
           break;
       }
-    }
+    }*/
 
     final finStr =
-        """Downloading : ${(ytdlpDownloadDataUI.hasReceivedMediaUpdateEver) ? '${chalk.brightCyan(ytdlpDownloadDataUI.mediaTitleOrVideoTitle)} ($videoAudioClassification)' : chalk.brightCyan(ytdlpDownloadDataUI.mediaTitleOrVideoTitle)}
+        """Downloading : ${(DownloadVideosUIData.hasReceivedMediaUpdateEver) ? '${chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!)} $videoAudioClassification' : chalk.brightCyan(chalk.brightCyan(DownloadVideosUIData.mediaTitleOrVideoTitle!))}
 [${downloadVideoProgress.generateProgressBar()}] ${chalk.brightCyan('${downloadVideoProgress.progress}%')}
 Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
@@ -228,56 +210,50 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
 
   for (final videoData in videoInfos) {
     // Reset data for the UI to update accordingly
-    ytdlpDownloadDataUI.reset();
+    DownloadVideosUIData.reset();
+    // Set our appropriate stage
+    DownloadVideosUIData.stagePerVideo = 0;
+    DownloadVideosUIData.mediaTitleOrVideoTitle = videoData.title;
 
     final subtitleFp = <String>[];
     // This is only re-assigned once, but we can't make this final (because you can not set a starting value of a final variable and change it again, but if we don't initialize it, then the endVideoPath != null check will fail)
     String? endVideoPath;
 
-    final res = downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData);
-    final resBroadcast = res.asBroadcastStream();
-
-    ytdlpDownloadDataUI.mediaTitleOrVideoTitle = videoData.title;
+    final resBroadcast =
+        downloadBestConfAndRetrieveCaptionFilesAndVideoFile(videoData)
+            .asBroadcastStream();
 
     resBroadcast.forEach((info) async {
       // FIXME: Cleanup
       Preferences.logger.info(info);
 
+      DownloadVideosUIData.lastReturnValue = info;
+
       switch (info) {
         case VideoDownloadingMessage():
-          ytdlpDownloadDataUI.downloadState = ProgressState.audio;
+          DownloadVideosUIData.hasReceivedMediaUpdateEver = true;
+          DownloadVideosUIData.mediaTitleOrVideoTitle = info.videoFilePath;
           break;
-      }
-
-      // FIXME: develop a method for doing this all at once
-      ytdlpDownloadDataUI.downloadState = info.progress;
-      ytdlpDownloadDataUI.verboseDownloadState = info.msgType;
-
-      if (info.msgType == DownloadProgressMessageType.subtitle) {
-        subtitleFp.add(info.message! as String);
-      } else if (info.msgType == DownloadProgressMessageType.videoFinal) {
-        endVideoPath = info.message! as String;
-      }
-
-      switch (info.progress) {
-        case ProgressState.video:
-        case ProgressState.audio:
-          // FIXME: this is now crashing!
-          ytdlpDownloadDataUI.mediaTitleOrVideoTitle = info.message
-              as String; // Assumed to be the downloaded media file name
+        case VideoDownloadedMessage():
+          DownloadVideosUIData.hasReceivedMediaUpdateEver = true;
+          DownloadVideosUIData.mediaTitleOrVideoTitle = info.videoFilePath;
+          break;
+        case AudioDownloadingMessage():
+          DownloadVideosUIData.hasReceivedMediaUpdateEver = true;
+          DownloadVideosUIData.mediaTitleOrVideoTitle = info.audioFilePath;
+          break;
+        case AudioDownloadedMessage():
+          DownloadVideosUIData.hasReceivedMediaUpdateEver = true;
+          DownloadVideosUIData.mediaTitleOrVideoTitle = info.audioFilePath;
           break;
         default:
           break;
       }
 
-      switch (info.msgType) {
-        case DownloadProgressMessageType.videoProgress:
-        case DownloadProgressMessageType.audioProgress:
-          ytdlpDownloadDataUI.hasReceivedMediaUpdateEver = true;
-          ytdlpDownloadDataUI.updates = info.message as Map<String, dynamic>;
-          break;
-        default:
-          return;
+      if (info is CaptionDownloadedMessage) {
+        subtitleFp.add(info.captionFilePath);
+      } else if (info is VideoAudioMergedMessage) {
+        endVideoPath = info.finalVideoFilePath;
       }
     });
 
@@ -296,18 +272,18 @@ Stage 1/4 downloading video\t52.5MiB/69.42MiB\t""";
           'Deleted video file on path $endVideoPath'); // FIXME: change to fine
     }
 
-    switch (lastRet.message) {
-      case DownloadReturnStatus.processNonZeroExit:
+    switch (lastRet) {
+      case ProcessNonZeroExitMessage():
         Preferences.logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         break;
-      case DownloadReturnStatus.progressStateStayedUninitialized:
+      case ProgressStateStayedUninitializedMessage():
         Preferences.logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
         break;
     }
 
-    if (lastRet.message != DownloadReturnStatus.success) {
+    if (lastRet is SuccessMessage) {
       Preferences.logger.fine('Failure point reached');
       // FIXME: only for now! we have not implemented the other download option yet!
 

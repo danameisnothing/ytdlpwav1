@@ -24,16 +24,18 @@ abstract class DownloadReturnStatus {
   factory DownloadReturnStatus.captionDownloaded(
           final String captionFilePath) =>
       CaptionDownloadedMessage(captionFilePath);
-  factory DownloadReturnStatus.videoDownloading(
+  factory DownloadReturnStatus.videoDownloading(final String videoFilePath,
           final Map<String, dynamic> jsonProgressData) =>
-      VideoDownloadingMessage(jsonProgressData);
-  factory DownloadReturnStatus.videoDownloaded(final String videoFilePath) =>
-      VideoDownloadedMessage(videoFilePath);
-  factory DownloadReturnStatus.audioDownloading(
+      VideoDownloadingMessage(videoFilePath, jsonProgressData);
+  factory DownloadReturnStatus.videoDownloaded(final String videoFilePath,
           final Map<String, dynamic> jsonProgressData) =>
-      AudioDownloadingMessage(jsonProgressData);
-  factory DownloadReturnStatus.audioDownloaded(final String audioFilePath) =>
-      AudioDownloadedMessage(audioFilePath);
+      VideoDownloadedMessage(videoFilePath, jsonProgressData);
+  factory DownloadReturnStatus.audioDownloading(final String audioFilePath,
+          final Map<String, dynamic> jsonProgressData) =>
+      AudioDownloadingMessage(audioFilePath, jsonProgressData);
+  factory DownloadReturnStatus.audioDownloaded(final String audioFilePath,
+          final Map<String, dynamic> jsonProgressData) =>
+      AudioDownloadedMessage(audioFilePath, jsonProgressData);
   factory DownloadReturnStatus.videoAudioMerged(
           final String finalVideoFilePath) =>
       VideoAudioMergedMessage(finalVideoFilePath);
@@ -51,27 +53,31 @@ final class CaptionDownloadedMessage extends DownloadReturnStatus {
 }
 
 final class VideoDownloadingMessage extends DownloadReturnStatus {
+  final String videoFilePath;
   final Map<String, dynamic> progressData;
 
-  VideoDownloadingMessage(this.progressData) : super();
+  VideoDownloadingMessage(this.videoFilePath, this.progressData) : super();
 }
 
 final class VideoDownloadedMessage extends DownloadReturnStatus {
   final String videoFilePath;
+  final Map<String, dynamic> progressData;
 
-  VideoDownloadedMessage(this.videoFilePath) : super();
+  VideoDownloadedMessage(this.videoFilePath, this.progressData) : super();
 }
 
 final class AudioDownloadingMessage extends DownloadReturnStatus {
+  final String audioFilePath;
   final Map<String, dynamic> progressData;
 
-  AudioDownloadingMessage(this.progressData) : super();
+  AudioDownloadingMessage(this.audioFilePath, this.progressData) : super();
 }
 
 final class AudioDownloadedMessage extends DownloadReturnStatus {
   final String audioFilePath;
+  final Map<String, dynamic> progressData;
 
-  AudioDownloadedMessage(this.audioFilePath) : super();
+  AudioDownloadedMessage(this.audioFilePath, this.progressData) : super();
 }
 
 final class VideoAudioMergedMessage extends DownloadReturnStatus {
@@ -113,6 +119,7 @@ Stream<DownloadReturnStatus>
   // FIXME: swap with a class or something, like the sealed class that we have been using up until now?
   ProgressState state = ProgressState
       .uninitialized; // Holds the state of which the logging must be done
+  late String videoAudioToBeDownloaded;
 
   // FIXME: move out of this func?
   await for (final tmpO in proc.stdout) {
@@ -143,7 +150,7 @@ Stream<DownloadReturnStatus>
           (output.endsWith('.mkv') ||
               output.endsWith('.webm') ||
               output.endsWith('.mp4'))) {
-        if (state == ProgressState.uninitialized) {
+        if (state == ProgressState.captionDownloaded) {
           state = ProgressState.videoDownloading;
           Preferences.logger.info(
               'Found video soon-to-be downloaded : $output'); // FIXME: change to fine
@@ -152,6 +159,7 @@ Stream<DownloadReturnStatus>
           Preferences.logger.info(
               'Found audio soon-to-be downloaded : $output'); // FIXME: change to fine
         }
+        videoAudioToBeDownloaded = output;
       }
 
       final progressOut = decodeJSONOrFail(output);
@@ -161,9 +169,23 @@ Stream<DownloadReturnStatus>
 
         // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
         if (state == ProgressState.videoDownloading) {
-          yield DownloadReturnStatus.videoDownloading(progressOut);
+          // Check if 100%
+          if ((progressOut['percentage'] as String).contains('100')) {
+            yield DownloadReturnStatus.videoDownloaded(
+                videoAudioToBeDownloaded, progressOut);
+          } else {
+            yield DownloadReturnStatus.videoDownloading(
+                videoAudioToBeDownloaded, progressOut);
+          }
         } else if (state == ProgressState.audioDownloading) {
-          yield DownloadReturnStatus.audioDownloading(progressOut);
+          // Check if 100%
+          if ((progressOut['percentage'] as String).contains('100')) {
+            yield DownloadReturnStatus.audioDownloaded(
+                videoAudioToBeDownloaded, progressOut);
+          } else {
+            yield DownloadReturnStatus.audioDownloading(
+                videoAudioToBeDownloaded, progressOut);
+          }
         }
       }
     }
