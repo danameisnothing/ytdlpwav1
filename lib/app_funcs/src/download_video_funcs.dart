@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
-    as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
@@ -10,6 +7,7 @@ import 'package:ytdlpwav1/app_settings/app_settings.dart';
 enum ProgressState {
   /// Uninitialized means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
   uninitialized,
+  captionDownloading,
   captionDownloaded,
   videoDownloading,
   videoDownloaded,
@@ -21,9 +19,12 @@ enum ProgressState {
 abstract class DownloadReturnStatus {
   DownloadReturnStatus();
 
-  factory DownloadReturnStatus.captionDownloaded(
-          final String captionFilePath) =>
-      CaptionDownloadedMessage(captionFilePath);
+  factory DownloadReturnStatus.captionDownloading(final String captionFilePath,
+          final Map<String, dynamic> jsonProgressData) =>
+      CaptionDownloadedMessage(captionFilePath, jsonProgressData);
+  factory DownloadReturnStatus.captionDownloaded(final String captionFilePath,
+          final Map<String, dynamic> jsonProgressData) =>
+      CaptionDownloadedMessage(captionFilePath, jsonProgressData);
   factory DownloadReturnStatus.videoDownloading(final String videoFilePath,
           final Map<String, dynamic> jsonProgressData) =>
       VideoDownloadingMessage(videoFilePath, jsonProgressData);
@@ -46,10 +47,18 @@ abstract class DownloadReturnStatus {
   factory DownloadReturnStatus.success() => SuccessMessage();
 }
 
+final class CaptionDownloadingMessage extends DownloadReturnStatus {
+  final String captionFilePath;
+  final Map<String, dynamic> progressData;
+
+  CaptionDownloadingMessage(this.captionFilePath, this.progressData) : super();
+}
+
 final class CaptionDownloadedMessage extends DownloadReturnStatus {
   final String captionFilePath;
+  final Map<String, dynamic> progressData;
 
-  CaptionDownloadedMessage(this.captionFilePath) : super();
+  CaptionDownloadedMessage(this.captionFilePath, this.progressData) : super();
 }
 
 final class VideoDownloadingMessage extends DownloadReturnStatus {
@@ -104,34 +113,38 @@ final class SuccessMessage extends DownloadReturnStatus {
 // TODO: cleanup
 Stream<DownloadReturnStatus>
     downloadBestConfAndRetrieveCaptionFilesAndVideoFile(
-        VideoInPlaylist videoData) async* {
+        Preferences pref, VideoInPlaylist videoData) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
-      argument: videoBestCmd,
+      argument: pref.videoBestCmd,
       replacements: {
-        TemplateReplacements.cookieFile: Preferences.cookieFilePath!,
+        TemplateReplacements.cookieFile: pref.cookieFilePath!,
         TemplateReplacements.videoId: videoData.id,
-        TemplateReplacements.outputDir: Preferences.outputDirPath!
+        TemplateReplacements.outputDir: pref.outputDirPath!
       });
-  Preferences.logger.fine(
+  proc.stdout.listen((event) {
+    //logger.fine(String.fromCharCodes(event));
+  });
+  logger.fine(
       'Started yt-dlp process for downloading video with best configuration');
 
   // FIXME: swap with a class or something, like the sealed class that we have been using up until now?
   ProgressState state = ProgressState
       .uninitialized; // Holds the state of which the logging must be done
   late String videoAudioToBeDownloaded;
+  // For later when we enable the user to not download captions
+  String? captionToDownload;
 
   // FIXME: move out of this func?
   await for (final tmpO in proc.stdout) {
     // There can be multiple lines in 1 stdout message
     for (final output in String.fromCharCodes(tmpO).split('\n')) {
       if (RegExp(r'\[download\]').hasMatch(output) && output.endsWith('.vtt')) {
-        state = ProgressState.captionDownloaded;
+        state = ProgressState.captionDownloading;
 
         final foundCaptFn = output.split(' ').elementAt(2);
-        Preferences.logger
-            .info("Found caption file : $foundCaptFn"); // FIXME: change to fine
-        yield DownloadReturnStatus.captionDownloaded(foundCaptFn);
+        logger.fine("Found caption file : $foundCaptFn");
+        captionToDownload = foundCaptFn;
       }
       if (RegExp(r'\[Merger\]').hasMatch(output)) {
         state = ProgressState.videoAudioMerged;
@@ -139,8 +152,7 @@ Stream<DownloadReturnStatus>
         // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
         final endVideoFp =
             RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
-        Preferences.logger
-            .info('Found merged video : $endVideoFp'); // FIXME: change to fine
+        logger.fine('Found merged video : $endVideoFp');
         yield DownloadReturnStatus.videoAudioMerged(endVideoFp);
       }
 
@@ -152,23 +164,31 @@ Stream<DownloadReturnStatus>
               output.endsWith('.mp4'))) {
         if (state == ProgressState.captionDownloaded) {
           state = ProgressState.videoDownloading;
-          Preferences.logger.info(
-              'Found video soon-to-be downloaded : $output'); // FIXME: change to fine
+          logger.fine('Found video soon-to-be downloaded : $output');
         } else {
           state = ProgressState.audioDownloading;
-          Preferences.logger.info(
-              'Found audio soon-to-be downloaded : $output'); // FIXME: change to fine
+          logger.fine('Found audio soon-to-be downloaded : $output');
         }
-        videoAudioToBeDownloaded = output;
+        final foundMedia = output.split(' ').elementAt(2);
+        videoAudioToBeDownloaded = foundMedia;
       }
 
       final progressOut = decodeJSONOrFail(output);
       if (progressOut != null && state != ProgressState.uninitialized) {
-        Preferences.logger.info(
-            'yt-dlp JSON output : $progressOut on mode $state'); // FIXME: change to fine
+        logger.fine('yt-dlp JSON output : $progressOut on mode $state');
 
         // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
-        if (state == ProgressState.videoDownloading) {
+        if (state == ProgressState.captionDownloading) {
+          // Check if 100%
+          if ((progressOut['percentage'] as String).contains('100')) {
+            yield DownloadReturnStatus.captionDownloaded(
+                captionToDownload!, progressOut);
+          } else {
+            yield DownloadReturnStatus.captionDownloading(
+                captionToDownload!, progressOut);
+          }
+        } else if (state == ProgressState.videoDownloading ||
+            state == ProgressState.uninitialized) {
           // Check if 100%
           if ((progressOut['percentage'] as String).contains('100')) {
             yield DownloadReturnStatus.videoDownloaded(

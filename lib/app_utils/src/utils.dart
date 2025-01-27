@@ -12,7 +12,7 @@ double map(num value, num istart, num istop, num ostart, num ostop) {
 }
 
 Never hardExit(String msg) {
-  Preferences.logger.severe(msg);
+  logger.severe(msg);
   exit(1);
 }
 
@@ -30,10 +30,10 @@ Map<String, dynamic>? decodeJSONOrFail(String str) {
   final stderrBroadcast = proc.stderr.asBroadcastStream();
   final stdoutBroadcast = proc.stdout.asBroadcastStream();
 
-  stderrBroadcast.listen((e) => Preferences.logger
-      .fine('[$procNameToLog STDERR] ${String.fromCharCodes(e).trim()}'));
-  stdoutBroadcast.listen((e) => Preferences.logger
-      .fine('[$procNameToLog STDOUT] ${String.fromCharCodes(e).trim()}'));
+  stderrBroadcast.listen((e) =>
+      logger.fine('[$procNameToLog STDERR] ${String.fromCharCodes(e).trim()}'));
+  stdoutBroadcast.listen((e) =>
+      logger.fine('[$procNameToLog STDOUT] ${String.fromCharCodes(e).trim()}'));
 
   return (stdout: stdoutBroadcast, stderr: stderrBroadcast);
 }
@@ -123,12 +123,12 @@ sealed class ProcessRunner {
               0)); // 2nd param is the arguments, without the yt-dlp element
 
     _processes.add(proc);
-    Preferences.logger
-        .fine('ProcessRunner: $name (${proc.pid}) spawned and added to list');
+    logger.fine(
+        'ProcessRunner: $name (${proc.pid}) spawned with arguments ($args) added to list');
 
     proc.exitCode.then((ec) {
       _processes.remove(proc);
-      Preferences.logger.fine(
+      logger.fine(
           'ProcessRunner: $name (${proc.pid}) completed with exit code $ec and removed from list');
     });
 
@@ -138,9 +138,12 @@ sealed class ProcessRunner {
 
   // TODO: doc
   static void killAll() {
-    for (final proc in List.from(_processes)) {
-      proc.kill(ProcessSignal.sigint);
-      Preferences.logger.fine('ProcessRunner: killed process $proc');
+    for (final proc in List<Process>.from(_processes)) {
+      // FIXME: BROKEN LOGIC!
+      if (!proc.kill(ProcessSignal.sigint)) {
+        proc.kill();
+      }
+      logger.fine('ProcessRunner: killed process $proc');
       _processes.remove(proc);
     }
   }

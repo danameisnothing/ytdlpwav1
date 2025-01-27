@@ -1,22 +1,19 @@
-import 'dart:io';
 import 'dart:convert';
 
-import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
-    as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
 // TODO: document where if this function returns nothing, it means it failed to fetch the playlist quantity
-Future<int?> getPlaylistQuantity(String cookieFile, String playlistId) async {
+Future<int?> getPlaylistQuantity(
+    Preferences pref, String cookieFile, String playlistId) async {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
-      argument: fetchPlaylistItemCountCmd,
+      argument: pref.fetchPlaylistItemCountCmd,
       replacements: {
         TemplateReplacements.cookieFile: cookieFile,
         TemplateReplacements.playlistId: playlistId
       });
-  Preferences.logger
-      .fine('Started yt-dlp process for fetching playlist quantity');
+  logger.fine('Started yt-dlp process for fetching playlist quantity');
 
   final data = await proc.stdout.first
       .then((e) => String.fromCharCodes(e), onError: (_) => null);
@@ -25,7 +22,7 @@ Future<int?> getPlaylistQuantity(String cookieFile, String playlistId) async {
     return null;
   }
 
-  Preferences.logger.fine('Got $data on playlist count');
+  logger.fine('Got $data on playlist count');
 
   return jsonDecode(data)['playlist_count']
       as int; // Data can't possibly be null because of the exitCode check
@@ -33,15 +30,15 @@ Future<int?> getPlaylistQuantity(String cookieFile, String playlistId) async {
 
 // TODO: document where if this function returns nothing, it means it failed to fetch the playlist quantity
 Stream<VideoInPlaylist> getPlaylistVideoInfos(
-    String cookieFile, String playlistId) async* {
+    Preferences pref, String cookieFile, String playlistId) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
-      argument: fetchPlaylistItemCountCmd,
+      argument: pref.fetchPlaylistItemCountCmd,
       replacements: {
         TemplateReplacements.cookieFile: cookieFile,
         TemplateReplacements.playlistId: playlistId
       });
-  Preferences.logger.fine('Started yt-dlp process for fetching video infos');
+  logger.fine('Started yt-dlp process for fetching video infos');
 
   await for (final e in proc.stdout) {
     final data = jsonDecode(String.fromCharCodes(e));
@@ -57,7 +54,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
           int.parse(uploadDate.substring(4, 6)),
           int.parse(uploadDate.substring(6, 8)),
         ));
-    Preferences.logger.fine('Got update on stdout, parsed as $parsed');
+    logger.fine('Got update on stdout, parsed as $parsed');
     yield parsed;
   }
 
