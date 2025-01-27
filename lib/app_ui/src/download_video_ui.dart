@@ -26,6 +26,7 @@ import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 } */
 
 enum DownloadUIStage {
+  stageUninitialized(uiStageMapping: 'Uninitialized'),
   stageDownloadingCaption(uiStageMapping: "Downloading Caption"),
   stageDownloadingVideo(uiStageMapping: "Downloading Video"),
   stageDownloadingAudio(uiStageMapping: "Downloading Audio"),
@@ -40,17 +41,10 @@ enum DownloadUIStage {
 final class DownloadVideoUI {
   final ProgressBar _pb;
   final List<VideoInPlaylist> _videos;
-  static late final DownloadVideoUI _instance;
 
-  factory DownloadVideoUI({required List<VideoInPlaylist> videos}) {
-    _instance = DownloadVideoUI._(videos);
-    return _instance;
-  }
-
-  DownloadVideoUI._(List<VideoInPlaylist> videos)
-      : _videos = videos,
-        _pb = ProgressBar(
-            top: videos.length,
+  DownloadVideoUI(this._videos)
+      : _pb = ProgressBar(
+            top: _videos.length,
             innerWidth: 32,
             renderFunc: (total, current) {
               return '[${ProgressBar.innerProgressBarIdent}]';
@@ -145,8 +139,9 @@ final class DownloadVideoUI {
 
   void printDownloadVideoUI(
       DownloadUIStage stage, DownloadReturnStatus status, int idxInVideoInfo) {
-    /*final String? progStr =
-        (progDataLocal != null) ? progDataLocal['percentage'] : null;
+    final prog = _getDownloadVideoProgDataMapped(status);
+
+    final String? progStr = (prog != null) ? prog['percentage'] : null;
 
     // When we pass this check, the last message are either downloading / downloaded video / audio
     if (progStr != null) {
@@ -155,31 +150,29 @@ final class DownloadVideoUI {
               5;
 
       // FIXME:
-      switch (DownloadVideosUIData.lastReturnValue) {
+      switch (status) {
+        case CaptionDownloadingMessage():
+        case CaptionDownloadedMessage():
+          _pb.progress = _pb.progress.truncate() +
+              (((stage.index / 5) * 0) + standalonePartProgStr);
+          break;
         case VideoDownloadingMessage():
         case VideoDownloadedMessage():
-          downloadVideoProgress.progress =
-              downloadVideoProgress.progress.truncate() +
-                  ((((DownloadVideosUIData.stagePerVideo + 1) / 5) * 0) +
-                      standalonePartProgStr);
-          break;
+          _pb.progress = _pb.progress.truncate() +
+              (((stage.index / 5) * 1) + standalonePartProgStr);
         case AudioDownloadingMessage():
         case AudioDownloadedMessage():
-          downloadVideoProgress.progress =
-              downloadVideoProgress.progress.truncate() +
-                  ((((DownloadVideosUIData.stagePerVideo + 1) / 5) * 1) +
-                      standalonePartProgStr);
+          _pb.progress = _pb.progress.truncate() +
+              (((stage.index / 5) * 2) + standalonePartProgStr);
         default:
           break;
       }
-    }*/
-
-    final prog = _getDownloadVideoProgDataMapped(status);
+    }
 
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100)}%')}
-Stage ${stage.index + 1}/4 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '\t${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')}' : ''}""";
+Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '\t${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')}' : ''}""";
 
     final chunked = templateStr.split('\n').map((str) {
       final strLen = stripAnsi(str).length;

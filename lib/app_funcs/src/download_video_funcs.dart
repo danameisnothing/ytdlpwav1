@@ -173,6 +173,7 @@ Stream<DownloadReturnStatus>
         videoAudioToBeDownloaded = foundMedia;
       }
 
+      // FIXME: The section where we send the captionDownloaded or captionDownloading is problematic, it is dropping stuff for some reason
       final progressOut = decodeJSONOrFail(output);
       if (progressOut != null && state != ProgressState.uninitialized) {
         logger.fine('yt-dlp JSON output : $progressOut on mode $state');
@@ -181,16 +182,21 @@ Stream<DownloadReturnStatus>
         if (state == ProgressState.captionDownloading) {
           // Check if 100%
           if ((progressOut['percentage'] as String).contains('100')) {
+            logger.fine('Sent caption $captionToDownload');
+            state = ProgressState.captionDownloaded;
             yield DownloadReturnStatus.captionDownloaded(
                 captionToDownload!, progressOut);
           } else {
+            logger.fine('Progress caption $captionToDownload $progressOut');
             yield DownloadReturnStatus.captionDownloading(
                 captionToDownload!, progressOut);
           }
         } else if (state == ProgressState.videoDownloading ||
             state == ProgressState.uninitialized) {
+          logger.fine('ffff');
           // Check if 100%
           if ((progressOut['percentage'] as String).contains('100')) {
+            state = ProgressState.videoDownloaded;
             yield DownloadReturnStatus.videoDownloaded(
                 videoAudioToBeDownloaded, progressOut);
           } else {
@@ -198,8 +204,10 @@ Stream<DownloadReturnStatus>
                 videoAudioToBeDownloaded, progressOut);
           }
         } else if (state == ProgressState.audioDownloading) {
+          logger.fine('gggg');
           // Check if 100%
           if ((progressOut['percentage'] as String).contains('100')) {
+            state = ProgressState.audioDownloaded;
             yield DownloadReturnStatus.audioDownloaded(
                 videoAudioToBeDownloaded, progressOut);
           } else {

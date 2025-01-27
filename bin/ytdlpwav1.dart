@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
-import 'package:ansi_strip/ansi_strip.dart';
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:chalkdart/chalk_x11.dart';
@@ -13,8 +11,6 @@ import 'package:cli_spin/cli_spin.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 import 'package:ytdlpwav1/app_settings/src/settings.dart';
 import 'package:ytdlpwav1/app_ui/src/download_video_ui.dart';
-import 'package:ytdlpwav1/simplecommandsplit/simplecommandsplit.dart'
-    as cmd_split_args;
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
@@ -101,7 +97,7 @@ Future downloadVideosLogic(
           .toList();
   logger.fine('Retrieved video data as $videoInfos');
 
-  final ui = DownloadVideoUI(videos: videoInfos);
+  final ui = DownloadVideoUI(videoInfos);
 
   for (final videoData in videoInfos) {
     // Exclusively for deletion in the case the process exited with a non-zero code
@@ -113,11 +109,12 @@ Future downloadVideosLogic(
         downloadBestConfAndRetrieveCaptionFilesAndVideoFile(pref, videoData)
             .asBroadcastStream();
 
-    DownloadUIStage stage = DownloadUIStage.stageDownloadingCaption;
+    DownloadUIStage stage = DownloadUIStage.stageUninitialized;
 
     resBroadcast.listen((info) {
       if (info is CaptionDownloadedMessage) {
         subtitleFp.add(info.captionFilePath);
+        logger.fine('found $subtitleFp');
       } else if (info is VideoAudioMergedMessage) {
         endVideoPath = info.finalVideoFilePath;
       }
