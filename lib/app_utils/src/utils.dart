@@ -83,7 +83,8 @@ enum TemplateReplacements {
   playlistId(template: '<playlist_id>'),
   videoId(template: '<video_id>'),
   videoInput(template: '<video_input>'),
-  outputDir(template: '<output_dir>');
+  outputDir(template: '<output_dir>'),
+  thumbOut(template: '<thumb_out>');
 
   const TemplateReplacements({required this.template});
 

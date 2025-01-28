@@ -7,7 +7,7 @@ final class Preferences {
   final String? playlistId;
   final String? outputDirPath;
 
-  // Do NOT alter the <cookie_file>, <playlist_id>, <video_id>, <video_input> and <output_dir> hardcoded strings.
+  // Do NOT alter the <cookie_file>, <playlist_id>, <video_id>, <thumb_out>, <video_input> and <output_dir> hardcoded strings.
   // https://www.reddit.com/r/youtubedl/comments/t7b3mn/ytdlp_special_characters_in_output_o/ (I am a dumbass)
   /// The template for the command used to fetch information about videos in a playlist
   final fetchVideoInfosCmd =
@@ -22,7 +22,7 @@ final class Preferences {
       'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._downloaded_bytes_str)s\',\'bytes_total\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 "https://www.youtube.com/watch?v=<video_id>"';
   /* 'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60][vcodec^=av01][ext=mp4]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._downloaded_bytes_str)s\',\'bytes_total\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"'; */
   final ffmpegExtractThumbnailCmd =
-      'ffmpeg -hide_banner -i "<video_input>" -map 0:2 -update 1 -frames:v 1 thumb.temp.png';
+      'ffmpeg -hide_banner -i "<video_input>" -map 0:2 -update 1 -frames:v 1 <thumb_out>';
 
   final debugLogFileName = 'ytdlpwav1_debug_log.txt';
   final videoDataFileName = 'ytdlpwav1_video_data.json';

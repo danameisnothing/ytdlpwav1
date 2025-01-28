@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
 // TODO: ENUM DOC!
-enum ProgressState {
+enum DownloadProgressState {
   /// Uninitialized means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
   uninitialized,
   captionDownloading,
@@ -16,6 +17,9 @@ enum ProgressState {
   audioDownloaded,
   videoAudioMerged
 }
+
+// TODO: ENUM DOC!
+enum FFmpegExtractThumb { started, completed }
 
 abstract class DownloadReturnStatus {
   DownloadReturnStatus();
@@ -111,6 +115,14 @@ final class SuccessMessage extends DownloadReturnStatus {
   SuccessMessage() : super();
 }
 
+final class FFmpegThumbReturnStatus {
+  final String thumbPicFilePath;
+  final int eCode;
+
+  FFmpegThumbReturnStatus(
+      {required this.thumbPicFilePath, required this.eCode});
+}
+
 // TODO: cleanup
 Stream<DownloadReturnStatus>
     downloadBestConfAndRetrieveCaptionFilesAndVideoFile(
@@ -123,12 +135,11 @@ Stream<DownloadReturnStatus>
         TemplateReplacements.videoId: videoData.id,
         TemplateReplacements.outputDir: pref.outputDirPath!
       });
-
   logger.fine(
       'Started yt-dlp process for downloading video with best configuration');
 
   // FIXME: swap with a class or something, like the sealed class that we have been using up until now?
-  ProgressState state = ProgressState
+  DownloadProgressState state = DownloadProgressState
       .uninitialized; // Holds the state of which the logging must be done
   late String videoAudioToBeDownloaded;
   // For later when we enable the user to not download captions
@@ -147,14 +158,14 @@ Stream<DownloadReturnStatus>
 
         if (RegExp(r'\[download\]').hasMatch(output) &&
             output.endsWith('.vtt')) {
-          state = ProgressState.captionDownloading;
+          state = DownloadProgressState.captionDownloading;
 
           final foundCaptFn = output.split(' ').elementAt(2);
           logger.fine("Found caption file : $foundCaptFn");
           captionToDownload = foundCaptFn;
         }
         if (RegExp(r'\[Merger\]').hasMatch(output)) {
-          state = ProgressState.videoAudioMerged;
+          state = DownloadProgressState.videoAudioMerged;
 
           // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
           final endVideoFp =
@@ -169,11 +180,11 @@ Stream<DownloadReturnStatus>
             (output.endsWith('.mkv') ||
                 output.endsWith('.webm') ||
                 output.endsWith('.mp4'))) {
-          if (state == ProgressState.captionDownloaded) {
-            state = ProgressState.videoDownloading;
+          if (state == DownloadProgressState.captionDownloaded) {
+            state = DownloadProgressState.videoDownloading;
             logger.fine('Found video soon-to-be downloaded : $output');
           } else {
-            state = ProgressState.audioDownloading;
+            state = DownloadProgressState.audioDownloading;
             logger.fine('Found audio soon-to-be downloaded : $output');
           }
           final foundMedia = output.split(' ').elementAt(2);
@@ -183,18 +194,19 @@ Stream<DownloadReturnStatus>
         // FIXME: The section where we send the captionDownloaded or captionDownloading is problematic, it is dropping stuff for some reason
         final progressOut = decodeJSONOrFail(output);
         //logger.warning('Raw ${String.fromCharCodes(tmpO)}');
-        if (progressOut != null && state != ProgressState.uninitialized) {
+        if (progressOut != null &&
+            state != DownloadProgressState.uninitialized) {
           //logger.fine('yt-dlp JSON output : $progressOut on mode $state');
 
           // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
-          if (state == ProgressState.captionDownloading &&
+          if (state == DownloadProgressState.captionDownloading &&
               !captionFilesPreventMultiple.contains(captionToDownload!)) {
             // Check if 100%
             if ((progressOut['percentage'] as String).contains('100')) {
               logger.fine(
                   'Sent caption $captionToDownload with progress : $progressOut');
               captionFilesPreventMultiple.add(captionToDownload);
-              state = ProgressState.captionDownloaded;
+              state = DownloadProgressState.captionDownloaded;
               yield DownloadReturnStatus.captionDownloaded(
                   captionToDownload, progressOut);
             } else {
@@ -203,21 +215,21 @@ Stream<DownloadReturnStatus>
               yield DownloadReturnStatus.captionDownloading(
                   captionToDownload, progressOut);
             }
-          } else if (state == ProgressState.videoDownloading ||
-              state == ProgressState.uninitialized) {
+          } else if (state == DownloadProgressState.videoDownloading ||
+              state == DownloadProgressState.uninitialized) {
             // Check if 100%
             if ((progressOut['percentage'] as String).contains('100')) {
-              state = ProgressState.videoDownloaded;
+              state = DownloadProgressState.videoDownloaded;
               yield DownloadReturnStatus.videoDownloaded(
                   videoAudioToBeDownloaded, progressOut);
             } else {
               yield DownloadReturnStatus.videoDownloading(
                   videoAudioToBeDownloaded, progressOut);
             }
-          } else if (state == ProgressState.audioDownloading) {
+          } else if (state == DownloadProgressState.audioDownloading) {
             // Check if 100%
             if ((progressOut['percentage'] as String).contains('100')) {
-              state = ProgressState.audioDownloaded;
+              state = DownloadProgressState.audioDownloaded;
               yield DownloadReturnStatus.audioDownloaded(
                   videoAudioToBeDownloaded, progressOut);
             } else {
@@ -234,11 +246,32 @@ Stream<DownloadReturnStatus>
     yield DownloadReturnStatus.processNonZeroExit(await proc.process.exitCode);
     return;
   }
-  if (state == ProgressState.uninitialized) {
+  if (state == DownloadProgressState.uninitialized) {
     yield DownloadReturnStatus.progressStateStayedUninitialized();
     return;
   }
 
   yield DownloadReturnStatus.success();
   return;
+}
+
+Stream<FFmpegThumbReturnStatus?> extractThumbnailFromVideo(
+    Preferences pref, String endVideoPath) async* {
+  // FIXME: only temporary hardcoded thumb.temp.png here!
+  final outPath =
+      '${pref.outputDirPath}${Platform.pathSeparator}thumb.temp.png';
+
+  final proc = await ProcessRunner.spawn(
+      name: 'ffmpeg',
+      argument: pref.ffmpegExtractThumbnailCmd,
+      replacements: {
+        TemplateReplacements.videoInput: endVideoPath,
+        TemplateReplacements.thumbOut: outPath
+      });
+  //logger.fine('Started FFmpeg process for extracting thumbnail from video');
+
+  yield null;
+
+  yield FFmpegThumbReturnStatus(
+      thumbPicFilePath: outPath, eCode: await proc.process.exitCode);
 }

@@ -49,7 +49,6 @@ Future<void> fetchVideosLogic(
   await for (final videoInfo in res) {
     videoInfos.add(videoInfo);
     playlistFetchInfoProgress.increment();
-    // FIXME: TEST!
     await playlistFetchInfoProgress.renderInLine((total, current) {
       final percStr =
           chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
@@ -84,7 +83,6 @@ Future<void> downloadVideosLogic(
   if (passedOutDir != outDir) {
     logger.info('Using default path of current directory at $outDir');
   }
-
   // For checking the user-supplied path
   if (!await Directory(outDir).exists()) {
     hardExit('The output directory does not exist');
@@ -111,7 +109,8 @@ Future<void> downloadVideosLogic(
 
     DownloadUIStage stage = DownloadUIStage.stageUninitialized;
 
-    resBroadcast.asyncMap((info) async {
+    // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
+    final lastRet = await resBroadcast.asyncMap((info) async {
       if (info is CaptionDownloadedMessage) {
         subtitleFp.add(info.captionFilePath);
         logger.fine('Found ${info.captionFilePath} as caption from logic');
@@ -139,9 +138,8 @@ Future<void> downloadVideosLogic(
       }
 
       await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
-    }).listen((_) => 0);
-
-    final lastRet = await resBroadcast.last;
+      return info;
+    }).last;
 
     logger.fine('End result received : $subtitleFp');
 
@@ -160,46 +158,36 @@ Future<void> downloadVideosLogic(
       }
     }
 
-    /*switch (lastRet) {
+    switch (lastRet) {
       case ProcessNonZeroExitMessage():
-        pref.logger.warning(
+        logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
-        downloadVideoProgress.progress =
-            downloadVideoProgress.progress.floor() + 1;
+        ui.onDownloadFailure();
         break;
       case ProgressStateStayedUninitializedMessage():
-        pref.logger.warning(
+        logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+        ui.onDownloadFailure();
         exit(0); // FIXME: for dev purposes
       //break;
-    }*/
+    }
 
-    // FIXME: right type of doc comment?
-    /// Fractional number to represent the download progress if separated onto 4 stages, here it is basically clamped to a max value of 1/4 (0.000 - 1/4) range
-    /// The three parts include : downloading video, audio, then mixing subtitles, extracting thumbnail from original video, then embedding captions and thumbnail onto a new video file
-    /* final standalonePartProgStr = (double.parse(
-                      (progressOut["percentage"] as String)
-                          .trim()
-                          .replaceFirst(RegExp(r'%'), '')) /
-                  100) /
-              4;
-          downloadVideoProgress.progress = downloadVideoProgress.progress
-                  .truncate() +
-              (((1 / 4) * (progressState.index - 1)) + standalonePartProgStr); */
     // TODO: save progress on every loop!
+    await stdout.flush();
 
-    // TODO: FFMPEG LOGIC
-    /* final ffmpegExtrThmbCmd = cmd_split_args
-        .split(ffmpegExtractThumbnailCmd.replaceAll(
-            RegExp(r'<video_input>'), cookieFile))
-        .toList();
-    settings.logger.fine(
-        'Starting FFmpeg process for extracting thumbnail from video $endVideoPath using argument $ffmpegExtrThmbCmd');
-    final dvbProc =
-        await Process.start(ffmpegExtrThmbCmd.removeAt(0), ffmpegExtrThmbCmd); */
-    /*final broadcastStreams =
-        implantDebugLoggerReturnBackStream(dvbProc, 'ffmpeg');*/
+    final ffExtract = extractThumbnailFromVideo(pref, endVideoPath!);
+    await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
+
+    final ret = await ffExtract.last;
+    if (ret!.eCode != 0) {
+      // TODO: more verbose error message
+      hardExit(
+          'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
+    }
+
+    await ui.printExtractThumbnailUI(
+        FFmpegExtractThumb.completed, endVideoPath!);
   }
 }
 

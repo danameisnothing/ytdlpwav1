@@ -7,30 +7,12 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
-/* class DownloadVideosUIData {
-  DownloadReturnStatus? lastReturnValue;
-  String? mediaTitleOrVideoTitle;
-
-  /// To indicate whether we should display the video title in YouTube, or the downloaded media name
-  static bool hasReceivedMediaUpdateEver = false;
-
-  /// A variable that indicates the current stage of the download process per video!
-  static int stagePerVideo = 0;
-
-  static void reset() {
-    lastReturnValue = null;
-    mediaTitleOrVideoTitle = null;
-    hasReceivedMediaUpdateEver = false;
-    stagePerVideo = 0;
-  }
-} */
-
 enum DownloadUIStage {
   stageUninitialized(uiStageMapping: 'Uninitialized'),
   stageDownloadingCaption(uiStageMapping: "Downloading Caption"),
   stageDownloadingVideo(uiStageMapping: "Downloading Video"),
   stageDownloadingAudio(uiStageMapping: "Downloading Audio"),
-  stageFFmpeg(uiStageMapping: "TODO: FFmpeg"), // FIXME: REPLACE
+  stageFFmpeg(uiStageMapping: "Extracting Thumbnail"), // FIXME: improve
   stageTBA(uiStageMapping: "TODO: TBA"); // FIXME: REPLACE
 
   const DownloadUIStage({required this.uiStageMapping});
@@ -49,6 +31,8 @@ final class DownloadVideoUI {
             renderFunc: (total, current) {
               return '[${ProgressBar.innerProgressBarIdent}]';
             });
+
+  void onDownloadFailure() => _pb.progress = _pb.progress.floor() + 1;
 
   String _getDownloadVideoMediaKindMapping(DownloadReturnStatus status) {
     switch (status) {
@@ -137,6 +121,20 @@ final class DownloadVideoUI {
     }
   }
 
+  Future<void> _printUI(String data) async {
+    final chunked = data.split('\n').map((str) {
+      final strLen = stripAnsi(str).length;
+      // Handle us not having enough space to print the base message
+      // TODO: handle too long string
+      return '$str${(stdout.terminalColumns < strLen) ? 'TODO: too long logic here' : List.filled(stdout.terminalColumns - strLen, ' ').join()}';
+    }).join('\n');
+
+    // Joined it all to prevent cursor jerking around
+    stdout.write('\r$chunked\r\x1b[${chunked.split('\n').length - 1}A');
+    await stdout
+        .flush(); // https://github.com/dart-lang/sdk/issues/25277 (we do need to await it)
+  }
+
   Future<void> printDownloadVideoUI(DownloadUIStage stage,
       DownloadReturnStatus status, int idxInVideoInfo) async {
     final prog = _getDownloadVideoProgDataMapped(status);
@@ -171,18 +169,27 @@ final class DownloadVideoUI {
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '    ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')}' : ''}""";
+Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
 
-    final chunked = templateStr.split('\n').map((str) {
-      final strLen = stripAnsi(str).length;
-      // Handle us not having enough space to print the base message
-      // TODO: handle too long string
-      return '$str${(stdout.terminalColumns < strLen) ? 'TODO: too long logic here' : List.filled(stdout.terminalColumns - strLen, ' ').join()}';
-    }).join('\n');
+    await _printUI(templateStr);
+  }
 
-    // Joined it all to prevent cursor jerking around
-    stdout.write('\r$chunked\r\x1b[${chunked.split('\n').length - 1}A');
-    await stdout
-        .flush(); // https://github.com/dart-lang/sdk/issues/25277 (we do need to await it)
+  Future<void> printExtractThumbnailUI(
+      FFmpegExtractThumb state, String videoTarget) async {
+    late final int completedOrNo;
+    if (state == FFmpegExtractThumb.completed) {
+      completedOrNo = 100;
+    } else {
+      completedOrNo = 0;
+    }
+
+    _pb.progress = _pb.progress.truncate() +
+        map(completedOrNo, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
+
+    final templateStr = """Extracting PNG from $videoTarget
+[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
+Stage ${DownloadUIStage.stageFFmpeg.index}/5 ${DownloadUIStage.stageFFmpeg.uiStageMapping}""";
+
+    await _printUI(templateStr);
   }
 }
