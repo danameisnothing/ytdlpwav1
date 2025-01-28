@@ -84,7 +84,11 @@ enum TemplateReplacements {
   videoId(template: '<video_id>'),
   videoInput(template: '<video_input>'),
   outputDir(template: '<output_dir>'),
-  thumbOut(template: '<thumb_out>');
+  thumbOut(template: '<thumb_out>'),
+  captionsInputFlags(template: '<captions_input_flags>'),
+  captionTrackMappingMetadata(template: '<caption_track_mapping_metadata>'),
+  thumbIn(template: '<thumb_in>'),
+  finalOut(template: '<final_out>');
 
   const TemplateReplacements({required this.template});
 

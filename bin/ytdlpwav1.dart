@@ -174,9 +174,10 @@ Future<void> downloadVideosLogic(
     }
 
     // TODO: save progress on every loop!
-    await stdout.flush();
-
-    final ffExtract = extractThumbnailFromVideo(pref, endVideoPath!);
+    // FIXME: only temporary hardcoded thumb.temp.png here! Put this setting on the launch arguments
+    final outPath =
+        '${pref.outputDirPath}${Platform.pathSeparator}thumb.temp.png';
+    final ffExtract = extractThumbnailFromVideo(pref, endVideoPath!, outPath);
     await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
 
     final ret = await ffExtract.last;
@@ -188,6 +189,32 @@ Future<void> downloadVideosLogic(
 
     await ui.printExtractThumbnailUI(
         FFmpegExtractThumb.completed, endVideoPath!);
+
+    // TODO:
+    final proc = await ProcessRunner.spawn(
+        name: 'ffmpeg',
+        argument: pref.ffmpegCombineFinalVideo,
+        replacements: {
+          TemplateReplacements.videoInput: endVideoPath!,
+          TemplateReplacements.captionsInputFlags: List<String>.generate(
+                  subtitleFp.length, (i) => '-i "${subtitleFp.elementAt(i)}"',
+                  growable: false)
+              .join(' '),
+          TemplateReplacements
+              .captionTrackMappingMetadata: List<String>.generate(
+                  subtitleFp.length,
+                  (i) =>
+                      '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
+                  growable: false)
+              .join(' '),
+          TemplateReplacements.thumbIn: outPath,
+          TemplateReplacements.finalOut:
+              '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"' // FIXME: improve
+        });
+    logger
+        .fine('Started FFmpeg process for merging files on to the final video');
+
+    logger.info(await proc.process.exitCode);
   }
 }
 

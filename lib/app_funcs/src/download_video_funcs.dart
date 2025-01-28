@@ -256,11 +256,7 @@ Stream<DownloadReturnStatus>
 }
 
 Stream<FFmpegThumbReturnStatus?> extractThumbnailFromVideo(
-    Preferences pref, String endVideoPath) async* {
-  // FIXME: only temporary hardcoded thumb.temp.png here!
-  final outPath =
-      '${pref.outputDirPath}${Platform.pathSeparator}thumb.temp.png';
-
+    Preferences pref, String endVideoPath, String outPath) async* {
   final proc = await ProcessRunner.spawn(
       name: 'ffmpeg',
       argument: pref.ffmpegExtractThumbnailCmd,
@@ -268,7 +264,7 @@ Stream<FFmpegThumbReturnStatus?> extractThumbnailFromVideo(
         TemplateReplacements.videoInput: endVideoPath,
         TemplateReplacements.thumbOut: outPath
       });
-  //logger.fine('Started FFmpeg process for extracting thumbnail from video');
+  logger.fine('Started FFmpeg process for extracting thumbnail from video');
 
   yield null;
 
