@@ -146,24 +146,23 @@ final class DownloadVideoUI {
     // When we pass this check, the last message are either downloading / downloaded video / audio
     if (progStr != null) {
       final standalonePartProgStr =
-          (double.parse(progStr.trim().replaceFirst(RegExp(r'%'), '')) / 100) /
-              5;
+          double.parse(progStr.trim().replaceFirst(RegExp(r'%'), ''));
 
       // FIXME:
       switch (status) {
         case CaptionDownloadingMessage():
         case CaptionDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
-              (((stage.index / 5) * 0) + standalonePartProgStr);
+              map(standalonePartProgStr, 0, 100, (1 / 5) * 0, (1 / 5) * 1);
           break;
         case VideoDownloadingMessage():
         case VideoDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
-              (((stage.index / 5) * 1) + standalonePartProgStr);
+              map(standalonePartProgStr, 0, 100, (1 / 5) * 1, (1 / 5) * 2);
         case AudioDownloadingMessage():
         case AudioDownloadedMessage():
-        /*_pb.progress = _pb.progress.truncate() +
-              (((stage.index / 5) * 2) + standalonePartProgStr);*/
+          _pb.progress = _pb.progress.truncate() +
+              map(standalonePartProgStr, 0, 100, (1 / 5) * 2, (1 / 5) * 3);
         default:
           break;
       }
@@ -171,8 +170,8 @@ final class DownloadVideoUI {
 
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
-[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100)}%')}
-Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '\t${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')}' : ''}""";
+[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
+Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '    ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')}' : ''}""";
 
     final chunked = templateStr.split('\n').map((str) {
       final strLen = stripAnsi(str).length;
@@ -182,7 +181,7 @@ Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloa
     }).join('\n');
 
     // Joined it all to prevent cursor jerking around
-    stdout.write('$chunked\r\x1b[${templateStr.split('\n').length}A');
+    stdout.write('\r$chunked\r\x1b[${chunked.split('\n').length - 1}A');
     await stdout
         .flush(); // https://github.com/dart-lang/sdk/issues/25277 (we do need to await it)
   }

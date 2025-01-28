@@ -117,6 +117,7 @@ Future<void> downloadVideosLogic(
         logger.fine('Found ${info.captionFilePath} as caption from logic');
       } else if (info is VideoAudioMergedMessage) {
         endVideoPath = info.finalVideoFilePath;
+        logger.fine('Found $endVideoPath as merged video and audio from logic');
       }
 
       // FIXME:
@@ -134,6 +135,7 @@ Future<void> downloadVideosLogic(
           stage = DownloadUIStage.stageDownloadingAudio;
           break;
         default:
+          break;
       }
 
       await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
@@ -141,7 +143,7 @@ Future<void> downloadVideosLogic(
 
     final lastRet = await resBroadcast.last;
 
-    logger.fine('End result received : $subtitleFp'); // FIXME: change to fine
+    logger.fine('End result received : $subtitleFp');
 
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
     // FIXME: not robust enough
