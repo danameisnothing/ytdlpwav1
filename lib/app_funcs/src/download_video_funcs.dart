@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
@@ -21,7 +22,7 @@ abstract class DownloadReturnStatus {
 
   factory DownloadReturnStatus.captionDownloading(final String captionFilePath,
           final Map<String, dynamic> jsonProgressData) =>
-      CaptionDownloadedMessage(captionFilePath, jsonProgressData);
+      CaptionDownloadingMessage(captionFilePath, jsonProgressData);
   factory DownloadReturnStatus.captionDownloaded(final String captionFilePath,
           final Map<String, dynamic> jsonProgressData) =>
       CaptionDownloadedMessage(captionFilePath, jsonProgressData);
@@ -122,9 +123,7 @@ Stream<DownloadReturnStatus>
         TemplateReplacements.videoId: videoData.id,
         TemplateReplacements.outputDir: pref.outputDirPath!
       });
-  proc.stdout.listen((event) {
-    //logger.fine(String.fromCharCodes(event));
-  });
+
   logger.fine(
       'Started yt-dlp process for downloading video with best configuration');
 
@@ -135,89 +134,101 @@ Stream<DownloadReturnStatus>
   // For later when we enable the user to not download captions
   String? captionToDownload;
 
+  // yt-dlp can sometimes claim to have it 100% downloaded, but in reality the bytes_downloaded can sometimes still is still going up, but the percentage is still at 100%, causing this function to return multiple times
+  final captionFilesPreventMultiple = <String>[];
+
   // FIXME: move out of this func?
   await for (final tmpO in proc.stdout) {
-    // There can be multiple lines in 1 stdout message
-    for (final output in String.fromCharCodes(tmpO).split('\n')) {
-      if (RegExp(r'\[download\]').hasMatch(output) && output.endsWith('.vtt')) {
-        state = ProgressState.captionDownloading;
+    // There can be multiple lines (and \r) in 1 stdout message
+    for (String tmpO2 in String.fromCharCodes(tmpO).split('\r')) {
+      for (String output in tmpO2.split('\n')) {
+        output = output.trim();
+        if (output.isEmpty) continue;
 
-        final foundCaptFn = output.split(' ').elementAt(2);
-        logger.fine("Found caption file : $foundCaptFn");
-        captionToDownload = foundCaptFn;
-      }
-      if (RegExp(r'\[Merger\]').hasMatch(output)) {
-        state = ProgressState.videoAudioMerged;
+        if (RegExp(r'\[download\]').hasMatch(output) &&
+            output.endsWith('.vtt')) {
+          state = ProgressState.captionDownloading;
 
-        // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
-        final endVideoFp =
-            RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
-        logger.fine('Found merged video : $endVideoFp');
-        yield DownloadReturnStatus.videoAudioMerged(endVideoFp);
-      }
-
-      // FIXME: TEMP ALTERNATIVE MODE!
-      // This output is actually yt-dlp choosing the target directory before downloading the media
-      if (RegExp(r'\[download\]').hasMatch(output) &&
-          (output.endsWith('.mkv') ||
-              output.endsWith('.webm') ||
-              output.endsWith('.mp4'))) {
-        if (state == ProgressState.captionDownloaded) {
-          state = ProgressState.videoDownloading;
-          logger.fine('Found video soon-to-be downloaded : $output');
-        } else {
-          state = ProgressState.audioDownloading;
-          logger.fine('Found audio soon-to-be downloaded : $output');
+          final foundCaptFn = output.split(' ').elementAt(2);
+          logger.fine("Found caption file : $foundCaptFn");
+          captionToDownload = foundCaptFn;
         }
-        final foundMedia = output.split(' ').elementAt(2);
-        videoAudioToBeDownloaded = foundMedia;
-      }
+        if (RegExp(r'\[Merger\]').hasMatch(output)) {
+          state = ProgressState.videoAudioMerged;
 
-      // FIXME: The section where we send the captionDownloaded or captionDownloading is problematic, it is dropping stuff for some reason
-      final progressOut = decodeJSONOrFail(output);
-      if (progressOut != null && state != ProgressState.uninitialized) {
-        logger.fine('yt-dlp JSON output : $progressOut on mode $state');
+          // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
+          final endVideoFp =
+              RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
+          logger.fine('Found merged video : $endVideoFp');
+          yield DownloadReturnStatus.videoAudioMerged(endVideoFp);
+        }
 
-        // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
-        if (state == ProgressState.captionDownloading) {
-          // Check if 100%
-          if ((progressOut['percentage'] as String).contains('100')) {
-            logger.fine('Sent caption $captionToDownload');
-            state = ProgressState.captionDownloaded;
-            yield DownloadReturnStatus.captionDownloaded(
-                captionToDownload!, progressOut);
+        // FIXME: TEMP ALTERNATIVE MODE!
+        // This output is actually yt-dlp choosing the target directory before downloading the media
+        if (RegExp(r'\[download\]').hasMatch(output) &&
+            (output.endsWith('.mkv') ||
+                output.endsWith('.webm') ||
+                output.endsWith('.mp4'))) {
+          if (state == ProgressState.captionDownloaded) {
+            state = ProgressState.videoDownloading;
+            logger.fine('Found video soon-to-be downloaded : $output');
           } else {
-            logger.fine('Progress caption $captionToDownload $progressOut');
-            yield DownloadReturnStatus.captionDownloading(
-                captionToDownload!, progressOut);
+            state = ProgressState.audioDownloading;
+            logger.fine('Found audio soon-to-be downloaded : $output');
           }
-        } else if (state == ProgressState.videoDownloading ||
-            state == ProgressState.uninitialized) {
-          logger.fine('ffff');
-          // Check if 100%
-          if ((progressOut['percentage'] as String).contains('100')) {
-            state = ProgressState.videoDownloaded;
-            yield DownloadReturnStatus.videoDownloaded(
-                videoAudioToBeDownloaded, progressOut);
-          } else {
-            yield DownloadReturnStatus.videoDownloading(
-                videoAudioToBeDownloaded, progressOut);
-          }
-        } else if (state == ProgressState.audioDownloading) {
-          logger.fine('gggg');
-          // Check if 100%
-          if ((progressOut['percentage'] as String).contains('100')) {
-            state = ProgressState.audioDownloaded;
-            yield DownloadReturnStatus.audioDownloaded(
-                videoAudioToBeDownloaded, progressOut);
-          } else {
-            yield DownloadReturnStatus.audioDownloading(
-                videoAudioToBeDownloaded, progressOut);
+          final foundMedia = output.split(' ').elementAt(2);
+          videoAudioToBeDownloaded = foundMedia;
+        }
+
+        // FIXME: The section where we send the captionDownloaded or captionDownloading is problematic, it is dropping stuff for some reason
+        final progressOut = decodeJSONOrFail(output);
+        //logger.warning('Raw ${String.fromCharCodes(tmpO)}');
+        if (progressOut != null && state != ProgressState.uninitialized) {
+          //logger.fine('yt-dlp JSON output : $progressOut on mode $state');
+
+          // Only return progress on video and audio downloads. Caption download progress are mostly insignificant (finishes too fast)
+          if (state == ProgressState.captionDownloading &&
+              !captionFilesPreventMultiple.contains(captionToDownload!)) {
+            // Check if 100%
+            if ((progressOut['percentage'] as String).contains('100')) {
+              logger.fine(
+                  'Sent caption $captionToDownload with progress : $progressOut');
+              captionFilesPreventMultiple.add(captionToDownload);
+              state = ProgressState.captionDownloaded;
+              yield DownloadReturnStatus.captionDownloaded(
+                  captionToDownload, progressOut);
+            } else {
+              logger.fine(
+                  'Progress caption $captionToDownload with progress : $progressOut');
+              yield DownloadReturnStatus.captionDownloading(
+                  captionToDownload, progressOut);
+            }
+          } else if (state == ProgressState.videoDownloading ||
+              state == ProgressState.uninitialized) {
+            // Check if 100%
+            if ((progressOut['percentage'] as String).contains('100')) {
+              state = ProgressState.videoDownloaded;
+              yield DownloadReturnStatus.videoDownloaded(
+                  videoAudioToBeDownloaded, progressOut);
+            } else {
+              yield DownloadReturnStatus.videoDownloading(
+                  videoAudioToBeDownloaded, progressOut);
+            }
+          } else if (state == ProgressState.audioDownloading) {
+            // Check if 100%
+            if ((progressOut['percentage'] as String).contains('100')) {
+              state = ProgressState.audioDownloaded;
+              yield DownloadReturnStatus.audioDownloaded(
+                  videoAudioToBeDownloaded, progressOut);
+            } else {
+              yield DownloadReturnStatus.audioDownloading(
+                  videoAudioToBeDownloaded, progressOut);
+            }
           }
         }
       }
     }
-  }
+  } //);
 
   if (await proc.process.exitCode != 0) {
     yield DownloadReturnStatus.processNonZeroExit(await proc.process.exitCode);

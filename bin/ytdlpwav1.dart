@@ -16,7 +16,7 @@ import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
 // TODO: split across multiple files
-Future fetchVideosLogic(
+Future<void> fetchVideosLogic(
     Preferences pref, String cookieFile, String playlistId) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (await videoDataFile.exists()) {
@@ -70,7 +70,7 @@ Future fetchVideosLogic(
   await videoDataFile.writeAsString(convertedRes);
 }
 
-Future downloadVideosLogic(
+Future<void> downloadVideosLogic(
     Preferences pref, String cookieFile, String? passedOutDir) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (!await videoDataFile.exists()) {
@@ -111,10 +111,10 @@ Future downloadVideosLogic(
 
     DownloadUIStage stage = DownloadUIStage.stageUninitialized;
 
-    resBroadcast.listen((info) {
+    resBroadcast.asyncMap((info) async {
       if (info is CaptionDownloadedMessage) {
         subtitleFp.add(info.captionFilePath);
-        logger.fine('found $subtitleFp');
+        logger.fine('Found ${info.captionFilePath} as caption from logic');
       } else if (info is VideoAudioMergedMessage) {
         endVideoPath = info.finalVideoFilePath;
       }
@@ -136,10 +136,12 @@ Future downloadVideosLogic(
         default:
       }
 
-      ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
-    });
+      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
+    }).listen((_) => 0);
 
     final lastRet = await resBroadcast.last;
+
+    logger.fine('End result received : $subtitleFp'); // FIXME: change to fine
 
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
     // FIXME: not robust enough

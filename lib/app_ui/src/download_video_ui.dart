@@ -137,8 +137,8 @@ final class DownloadVideoUI {
     }
   }
 
-  void printDownloadVideoUI(
-      DownloadUIStage stage, DownloadReturnStatus status, int idxInVideoInfo) {
+  Future<void> printDownloadVideoUI(DownloadUIStage stage,
+      DownloadReturnStatus status, int idxInVideoInfo) async {
     final prog = _getDownloadVideoProgDataMapped(status);
 
     final String? progStr = (prog != null) ? prog['percentage'] : null;
@@ -162,8 +162,8 @@ final class DownloadVideoUI {
               (((stage.index / 5) * 1) + standalonePartProgStr);
         case AudioDownloadingMessage():
         case AudioDownloadedMessage():
-          _pb.progress = _pb.progress.truncate() +
-              (((stage.index / 5) * 2) + standalonePartProgStr);
+        /*_pb.progress = _pb.progress.truncate() +
+              (((stage.index / 5) * 2) + standalonePartProgStr);*/
         default:
           break;
       }
@@ -183,6 +183,7 @@ Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloa
 
     // Joined it all to prevent cursor jerking around
     stdout.write('$chunked\r\x1b[${templateStr.split('\n').length}A');
-    stdout.flush(); // Fine not to await it?
+    await stdout
+        .flush(); // https://github.com/dart-lang/sdk/issues/25277 (we do need to await it)
   }
 }

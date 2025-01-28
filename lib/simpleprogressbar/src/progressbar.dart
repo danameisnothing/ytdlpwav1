@@ -75,7 +75,7 @@ final class ProgressBar {
     return '$curPassedStr/$topPassedStr';
   }
 
-  Future renderInLine([String Function(num, num)? renderFuncIn]) async {
+  Future<void> renderInLine([String Function(num, num)? renderFuncIn]) async {
     late String str;
     if (renderFuncIn == null) {
       if (_renderFunc == null) {
@@ -106,7 +106,7 @@ final class ProgressBar {
     }
   }
 
-  Future finishRender() async {
+  Future<void> finishRender() async {
     stdout.write('\n');
     await stdout.flush();
   }
