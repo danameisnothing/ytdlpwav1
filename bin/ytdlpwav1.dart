@@ -15,6 +15,26 @@ import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 
+Future<void> cleanupGeneratedFiles(
+    {required List<String> captionFPs,
+    String? thumbFP,
+    String? endVideoFP}) async {
+  for (final path in captionFPs) {
+    final fSub = File(path);
+    if (await fSub.exists()) await fSub.delete();
+  }
+
+  if (endVideoFP != null) {
+    final fEV = File(endVideoFP);
+    if (await fEV.exists()) await fEV.delete();
+  }
+
+  if (thumbFP != null) {
+    final fThumb = File(thumbFP);
+    if (await fThumb.exists()) await fThumb.delete();
+  }
+}
+
 // TODO: split across multiple files
 Future<void> fetchVideosLogic(
     Preferences pref, String cookieFile, String playlistId) async {
@@ -99,7 +119,7 @@ Future<void> downloadVideosLogic(
 
   for (final videoData in videoInfos) {
     // Exclusively for deletion in the case the process exited with a non-zero code
-    final subtitleFp = <String>[];
+    final captionFP = <String>[];
     // This should only be reassigned once
     String? endVideoPath;
 
@@ -112,7 +132,7 @@ Future<void> downloadVideosLogic(
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
     final lastRet = await resBroadcast.asyncMap((info) async {
       if (info is CaptionDownloadedMessage) {
-        subtitleFp.add(info.captionFilePath);
+        captionFP.add(info.captionFilePath);
         logger.fine('Found ${info.captionFilePath} as caption from logic');
       } else if (info is VideoAudioMergedMessage) {
         endVideoPath = info.finalVideoFilePath;
@@ -141,12 +161,12 @@ Future<void> downloadVideosLogic(
       return info;
     }).last;
 
-    logger.fine('End result received : $subtitleFp');
+    logger.fine('End result received : $captionFP');
 
     // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
     // FIXME: not robust enough
     if (lastRet is! SuccessMessage) {
-      for (final path in subtitleFp) {
+      for (final path in captionFP) {
         await File(path).delete();
         logger.info(
             'Deleted subtitle file on path $path'); // FIXME: change to fine
@@ -163,19 +183,22 @@ Future<void> downloadVideosLogic(
         logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+        await cleanupGeneratedFiles(
+            captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
         continue;
       //break;
       case ProgressStateStayedUninitializedMessage():
         logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+        await cleanupGeneratedFiles(
+            captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
         continue; // FIXME: for dev purposes
       //break;
     }
 
     // TODO: save progress on every loop!
-    // FIXME: only temporary hardcoded thumb.temp.png here! Put this setting on the launch arguments
     final ffThumbExtractedPath =
         '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
     final ffExtract =
@@ -184,6 +207,10 @@ Future<void> downloadVideosLogic(
 
     final ret = await ffExtract.last;
     if (ret!.eCode != 0) {
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP,
+          thumbFP: ffThumbExtractedPath,
+          endVideoFP: endVideoPath!);
       // TODO: more verbose error message
       hardExit(
           'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
@@ -192,50 +219,28 @@ Future<void> downloadVideosLogic(
     await ui.printExtractThumbnailUI(
         FFmpegExtractThumb.completed, endVideoPath!);
 
-    final mergedVideoPath =
+    final mergedFinalVideoFP =
         '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
-    // TODO:
-    final proc = await ProcessRunner.spawn(
-        name: 'ffmpeg',
-        argument: pref.ffmpegCombineFinalVideo,
-        replacements: {
-          TemplateReplacements.videoInput: endVideoPath!,
-          TemplateReplacements.captionsInputFlags: List<String>.generate(
-                  subtitleFp.length, (i) => '-i "${subtitleFp.elementAt(i)}"',
-                  growable: false)
-              .join(' '),
-          TemplateReplacements
-              .captionTrackMappingMetadata: List<String>.generate(
-                  subtitleFp.length,
-                  (i) =>
-                      '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
-                  growable: false)
-              .join(' '),
-          TemplateReplacements.thumbIn: ffThumbExtractedPath,
-          TemplateReplacements.finalOut: mergedVideoPath
-        });
-    logger
-        .fine('Started FFmpeg process for merging files on to the final video');
+    final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
+        ffThumbExtractedPath, mergedFinalVideoFP);
+    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
 
-    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedVideoPath);
-
-    if (await proc.process.exitCode != 0) {
+    final ret2 = await ffMerge.last;
+    if (ret2!.eCode != 0) {
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP,
+          thumbFP: ffThumbExtractedPath,
+          endVideoFP: endVideoPath!);
       // TODO: more verbose error message
       hardExit(
           'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
     }
-    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedVideoPath);
+    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
 
-    // Cleanup no matter what
-    // TODO: do this to the instances where it failed to download, similar to Go's defer statement
-    for (final path in subtitleFp) {
-      final fSub = File(path);
-      if (await fSub.exists()) await fSub.delete();
-    }
-    final fEV = File(endVideoPath!);
-    if (await fEV.exists()) await fEV.delete();
-    final fThumb = File(ffThumbExtractedPath);
-    if (await fThumb.exists()) await fThumb.delete();
+    await cleanupGeneratedFiles(
+        captionFPs: captionFP,
+        thumbFP: ffThumbExtractedPath,
+        endVideoFP: endVideoPath!);
   }
 }
 

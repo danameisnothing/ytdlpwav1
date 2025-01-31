@@ -128,6 +128,12 @@ final class FFmpegThumbReturnStatus {
       {required this.thumbPicFilePath, required this.eCode});
 }
 
+final class FFmpegMergeFilesStatus {
+  final int eCode;
+
+  FFmpegMergeFilesStatus({required this.eCode});
+}
+
 // TODO: cleanup
 Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
     Preferences pref, String targetCmd, VideoInPlaylist videoData) async* {
@@ -274,4 +280,31 @@ Stream<FFmpegThumbReturnStatus?> extractThumbnailFromVideo(
 
   yield FFmpegThumbReturnStatus(
       thumbPicFilePath: outPath, eCode: await proc.process.exitCode);
+}
+
+Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
+    List<String> captionFP, String thumbFP, String targetOutFP) async* {
+  final proc = await ProcessRunner.spawn(
+      name: 'ffmpeg',
+      argument: pref.ffmpegCombineFinalVideo,
+      replacements: {
+        TemplateReplacements.videoInput: baseVideoFP,
+        TemplateReplacements.captionsInputFlags: List<String>.generate(
+                captionFP.length, (i) => '-i "${captionFP.elementAt(i)}"',
+                growable: false)
+            .join(' '),
+        TemplateReplacements.captionTrackMappingMetadata: List<String>.generate(
+                captionFP.length,
+                (i) =>
+                    '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
+                growable: false)
+            .join(' '),
+        TemplateReplacements.thumbIn: thumbFP,
+        TemplateReplacements.finalOut: targetOutFP
+      });
+  logger.fine('Started FFmpeg process for merging files on to the final video');
+
+  yield null;
+
+  yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
 }

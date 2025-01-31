@@ -199,7 +199,7 @@ Stage ${DownloadUIStage.stageFFmpegExtractingThumbnail.index}/5 ${DownloadUIStag
     }
 
     _pb.progress = _pb.progress.truncate() +
-        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
+        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 4, (1 / 5) * 5);
 
     final templateStr = """Merging final output to $finalVidOut
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
