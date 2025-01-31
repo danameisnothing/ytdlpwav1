@@ -19,7 +19,12 @@ enum DownloadProgressState {
 }
 
 // TODO: ENUM DOC!
+// FIXME: necessary with these enums having the same values?
 enum FFmpegExtractThumb { started, completed }
+
+// TODO: ENUM DOC!
+// FIXME: necessary with these enums having the same values?
+enum FFmpegMergeFilesState { started, completed }
 
 abstract class DownloadReturnStatus {
   DownloadReturnStatus();
@@ -124,12 +129,11 @@ final class FFmpegThumbReturnStatus {
 }
 
 // TODO: cleanup
-Stream<DownloadReturnStatus>
-    downloadBestConfAndRetrieveCaptionFilesAndVideoFile(
-        Preferences pref, VideoInPlaylist videoData) async* {
+Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
+    Preferences pref, String targetCmd, VideoInPlaylist videoData) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
-      argument: pref.videoBestCmd,
+      argument: targetCmd,
       replacements: {
         TemplateReplacements.cookieFile: pref.cookieFilePath!,
         TemplateReplacements.videoId: videoData.id,

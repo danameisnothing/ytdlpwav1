@@ -103,9 +103,9 @@ Future<void> downloadVideosLogic(
     // This should only be reassigned once
     String? endVideoPath;
 
-    final resBroadcast =
-        downloadBestConfAndRetrieveCaptionFilesAndVideoFile(pref, videoData)
-            .asBroadcastStream();
+    final resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+            pref, pref.videoBestCmd, videoData)
+        .asBroadcastStream();
 
     DownloadUIStage stage = DownloadUIStage.stageUninitialized;
 
@@ -123,7 +123,7 @@ Future<void> downloadVideosLogic(
       switch (info) {
         case CaptionDownloadingMessage():
         case CaptionDownloadedMessage():
-          stage = DownloadUIStage.stageDownloadingCaption;
+          stage = DownloadUIStage.stageDownloadingCaptions;
           break;
         case VideoDownloadingMessage():
         case VideoDownloadedMessage():
@@ -164,20 +164,22 @@ Future<void> downloadVideosLogic(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
         ui.onDownloadFailure();
-        break;
+        continue;
+      //break;
       case ProgressStateStayedUninitializedMessage():
         logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
         ui.onDownloadFailure();
-        exit(0); // FIXME: for dev purposes
+        continue; // FIXME: for dev purposes
       //break;
     }
 
     // TODO: save progress on every loop!
     // FIXME: only temporary hardcoded thumb.temp.png here! Put this setting on the launch arguments
-    final outPath =
-        '${pref.outputDirPath}${Platform.pathSeparator}thumb.temp.png';
-    final ffExtract = extractThumbnailFromVideo(pref, endVideoPath!, outPath);
+    final ffThumbExtractedPath =
+        '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
+    final ffExtract =
+        extractThumbnailFromVideo(pref, endVideoPath!, ffThumbExtractedPath);
     await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
 
     final ret = await ffExtract.last;
@@ -190,6 +192,8 @@ Future<void> downloadVideosLogic(
     await ui.printExtractThumbnailUI(
         FFmpegExtractThumb.completed, endVideoPath!);
 
+    final mergedVideoPath =
+        '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
     // TODO:
     final proc = await ProcessRunner.spawn(
         name: 'ffmpeg',
@@ -207,14 +211,31 @@ Future<void> downloadVideosLogic(
                       '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
                   growable: false)
               .join(' '),
-          TemplateReplacements.thumbIn: outPath,
-          TemplateReplacements.finalOut:
-              '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"' // FIXME: improve
+          TemplateReplacements.thumbIn: ffThumbExtractedPath,
+          TemplateReplacements.finalOut: mergedVideoPath
         });
     logger
         .fine('Started FFmpeg process for merging files on to the final video');
 
-    logger.info(await proc.process.exitCode);
+    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedVideoPath);
+
+    if (await proc.process.exitCode != 0) {
+      // TODO: more verbose error message
+      hardExit(
+          'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
+    }
+    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedVideoPath);
+
+    // Cleanup no matter what
+    // TODO: do this to the instances where it failed to download, similar to Go's defer statement
+    for (final path in subtitleFp) {
+      final fSub = File(path);
+      if (await fSub.exists()) await fSub.delete();
+    }
+    final fEV = File(endVideoPath!);
+    if (await fEV.exists()) await fEV.delete();
+    final fThumb = File(ffThumbExtractedPath);
+    if (await fThumb.exists()) await fThumb.delete();
   }
 }
 

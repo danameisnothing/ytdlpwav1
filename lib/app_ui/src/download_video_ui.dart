@@ -9,11 +9,11 @@ import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
 enum DownloadUIStage {
   stageUninitialized(uiStageMapping: 'Uninitialized'),
-  stageDownloadingCaption(uiStageMapping: "Downloading Caption"),
-  stageDownloadingVideo(uiStageMapping: "Downloading Video"),
-  stageDownloadingAudio(uiStageMapping: "Downloading Audio"),
-  stageFFmpeg(uiStageMapping: "Extracting Thumbnail"), // FIXME: improve
-  stageTBA(uiStageMapping: "TODO: TBA"); // FIXME: REPLACE
+  stageDownloadingCaptions(uiStageMapping: "Downloading caption(s)"),
+  stageDownloadingVideo(uiStageMapping: "Downloading video"),
+  stageDownloadingAudio(uiStageMapping: "Downloading audio"),
+  stageFFmpegExtractingThumbnail(uiStageMapping: "Extracting thumbnail"),
+  stageFFmpegMergeFiles(uiStageMapping: "Merging files");
 
   const DownloadUIStage({required this.uiStageMapping});
 
@@ -176,19 +176,34 @@ Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloa
 
   Future<void> printExtractThumbnailUI(
       FFmpegExtractThumb state, String videoTarget) async {
-    late final int completedOrNo;
+    bool completed = false;
     if (state == FFmpegExtractThumb.completed) {
-      completedOrNo = 100;
-    } else {
-      completedOrNo = 0;
+      completed = true;
     }
 
     _pb.progress = _pb.progress.truncate() +
-        map(completedOrNo, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
+        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
 
     final templateStr = """Extracting PNG from $videoTarget
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStage.stageFFmpeg.index}/5 ${DownloadUIStage.stageFFmpeg.uiStageMapping}""";
+Stage ${DownloadUIStage.stageFFmpegExtractingThumbnail.index}/5 ${DownloadUIStage.stageFFmpegExtractingThumbnail.uiStageMapping}""";
+
+    await _printUI(templateStr);
+  }
+
+  Future<void> printMergeFilesUI(
+      FFmpegMergeFilesState state, String finalVidOut) async {
+    bool completed = false;
+    if (state == FFmpegMergeFilesState.completed) {
+      completed = true;
+    }
+
+    _pb.progress = _pb.progress.truncate() +
+        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
+
+    final templateStr = """Merging final output to $finalVidOut
+[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
+Stage ${DownloadUIStage.stageFFmpegMergeFiles.index}/5 ${DownloadUIStage.stageFFmpegMergeFiles.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
