@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
-import 'package:chalkdart/chalk_x11.dart';
 import 'package:logging/logging.dart';
 import 'package:cli_spin/cli_spin.dart';
 
