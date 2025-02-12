@@ -144,7 +144,7 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
         TemplateReplacements.outputDir: pref.outputDirPath!
       });
   logger.fine(
-      'Started yt-dlp process for downloading video with best configuration');
+      'Started yt-dlp process for downloading video with configuration : $targetCmd');
 
   // FIXME: swap with a class or something, like the sealed class that we have been using up until now?
   DownloadProgressState state = DownloadProgressState

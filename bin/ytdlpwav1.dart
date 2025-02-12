@@ -122,11 +122,25 @@ Future<void> downloadVideosLogic(
     // This should only be reassigned once
     String? endVideoPath;
 
-    final resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-            pref, pref.videoBestCmd, videoData)
+    Stream<DownloadReturnStatus> resBroadcast;
+    bool isDownloadingPreferredFormat = true;
+
+    resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+            pref, pref.videoPreferredCmd, videoData)
         .asBroadcastStream();
 
     DownloadUIStage stage = DownloadUIStage.stageUninitialized;
+
+    // Assume we are not able to download in the preferred codec
+    if (await resBroadcast.first is ProcessNonZeroExitMessage) {
+      logger.warning(
+          'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
+      isDownloadingPreferredFormat = false;
+
+      resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+              pref, pref.videoPreferredCmd, videoData)
+          .asBroadcastStream();
+    }
 
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
     final lastRet = await resBroadcast.asyncMap((info) async {
@@ -156,7 +170,8 @@ Future<void> downloadVideosLogic(
           break;
       }
 
-      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
+      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData),
+          isDownloadingPreferredFormat);
       return info;
     }).last;
 
@@ -177,6 +192,7 @@ Future<void> downloadVideosLogic(
       }
     }
 
+    // This block is for handling any other error that is not related to the video failed to be downloaded in our target codec
     switch (lastRet) {
       case ProcessNonZeroExitMessage():
         logger.warning(
