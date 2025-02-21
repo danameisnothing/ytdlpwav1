@@ -128,8 +128,9 @@ Future<void> downloadVideosLogic(
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
             pref, pref.videoPreferredCmd, videoData)
         .asBroadcastStream();
+    ui.setUseAllStageTemplates(true);
 
-    DownloadUIStage stage = DownloadUIStage.stageUninitialized;
+    DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
 
     // Assume we are not able to download in the preferred codec
     if (await resBroadcast.first is ProcessNonZeroExitMessage) {
@@ -138,8 +139,9 @@ Future<void> downloadVideosLogic(
       isDownloadingPreferredFormat = false;
 
       resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-              pref, pref.videoPreferredCmd, videoData)
+              pref, pref.videoRegularCmd, videoData)
           .asBroadcastStream();
+      ui.setUseAllStageTemplates(false);
     }
 
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
@@ -156,15 +158,15 @@ Future<void> downloadVideosLogic(
       switch (info) {
         case CaptionDownloadingMessage():
         case CaptionDownloadedMessage():
-          stage = DownloadUIStage.stageDownloadingCaptions;
+          stage = DownloadUIStageTemplate.stageDownloadingCaptions;
           break;
         case VideoDownloadingMessage():
         case VideoDownloadedMessage():
-          stage = DownloadUIStage.stageDownloadingVideo;
+          stage = DownloadUIStageTemplate.stageDownloadingVideo;
           break;
         case AudioDownloadingMessage():
         case AudioDownloadedMessage():
-          stage = DownloadUIStage.stageDownloadingAudio;
+          stage = DownloadUIStageTemplate.stageDownloadingAudio;
           break;
         default:
           break;
@@ -195,6 +197,8 @@ Future<void> downloadVideosLogic(
     // This block is for handling any other error that is not related to the video failed to be downloaded in our target codec
     switch (lastRet) {
       case ProcessNonZeroExitMessage():
+        // TODO: More robust error handling!
+        // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
         logger.warning(
             'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
         // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter

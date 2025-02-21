@@ -7,15 +7,16 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
-enum DownloadUIStage {
+enum DownloadUIStageTemplate {
   stageUninitialized(uiStageMapping: 'Uninitialized'),
-  stageDownloadingCaptions(uiStageMapping: "Downloading caption(s)"),
-  stageDownloadingVideo(uiStageMapping: "Downloading video"),
-  stageDownloadingAudio(uiStageMapping: "Downloading audio"),
-  stageFFmpegExtractingThumbnail(uiStageMapping: "Extracting thumbnail"),
-  stageFFmpegMergeFiles(uiStageMapping: "Merging files");
+  stageDownloadingCaptions(uiStageMapping: 'Downloading caption(s)'),
+  stageDownloadingVideo(uiStageMapping: 'Downloading video'),
+  stageDownloadingAudio(uiStageMapping: 'Downloading audio'),
+  stageFFmpegExtractingThumbnail(uiStageMapping: 'Extracting thumbnail'),
+  stageFFmpegReencodingVideo(uiStageMapping: 'Re-encoding video to AV1'),
+  stageFFmpegMergeFiles(uiStageMapping: 'Merging files');
 
-  const DownloadUIStage({required this.uiStageMapping});
+  const DownloadUIStageTemplate({required this.uiStageMapping});
 
   final String uiStageMapping;
 }
@@ -23,6 +24,8 @@ enum DownloadUIStage {
 final class DownloadVideoUI {
   final ProgressBar _pb;
   final List<VideoInPlaylist> _videos;
+
+  int _maxStageUI = -1;
 
   DownloadVideoUI(this._videos)
       : _pb = ProgressBar(
@@ -33,6 +36,13 @@ final class DownloadVideoUI {
             });
 
   void onDownloadFailure() => _pb.progress = _pb.progress.floor() + 1;
+
+  void setUseAllStageTemplates(bool useAll) {
+    // Need to update when we add more stages
+    _maxStageUI = (useAll)
+        ? DownloadUIStageTemplate.values.length
+        : DownloadUIStageTemplate.values.length - 1;
+  }
 
   String _getDownloadVideoMediaKindMapping(DownloadReturnStatus status) {
     switch (status) {
@@ -136,7 +146,7 @@ final class DownloadVideoUI {
   }
 
   Future<void> printDownloadVideoUI(
-      DownloadUIStage stage,
+      DownloadUIStageTemplate stage,
       DownloadReturnStatus status,
       int idxInVideoInfo,
       bool isDownloadingPreferredFormat) async {
@@ -154,16 +164,19 @@ final class DownloadVideoUI {
         case CaptionDownloadingMessage():
         case CaptionDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
-              map(standalonePartProgStr, 0, 100, (1 / 5) * 0, (1 / 5) * 1);
+              map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 0,
+                  (1 / _maxStageUI) * 1);
           break;
         case VideoDownloadingMessage():
         case VideoDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
-              map(standalonePartProgStr, 0, 100, (1 / 5) * 1, (1 / 5) * 2);
+              map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 1,
+                  (1 / _maxStageUI) * 2);
         case AudioDownloadingMessage():
         case AudioDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
-              map(standalonePartProgStr, 0, 100, (1 / 5) * 2, (1 / 5) * 3);
+              map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 2,
+                  (1 / _maxStageUI) * 3);
         default:
           break;
       }
@@ -172,7 +185,7 @@ final class DownloadVideoUI {
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}DEBUG: | ${(!isDownloadingPreferredFormat) ? 'NOT' : 'TRUE'}""";
+Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''} | DEBUG isDownloadingPreferredFormat: ${(!isDownloadingPreferredFormat) ? 'false' : 'true'}""";
 
     await _printUI(templateStr);
   }
@@ -185,11 +198,12 @@ Stage ${stage.index}/5 ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloa
     }
 
     _pb.progress = _pb.progress.truncate() +
-        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 3, (1 / 5) * 4);
+        map((completed) ? 100 : 0, 0, 100, (1 / _maxStageUI) * 3,
+            (1 / _maxStageUI) * 4);
 
     final templateStr = """Extracting PNG from $videoTarget
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStage.stageFFmpegExtractingThumbnail.index}/5 ${DownloadUIStage.stageFFmpegExtractingThumbnail.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
@@ -202,11 +216,12 @@ Stage ${DownloadUIStage.stageFFmpegExtractingThumbnail.index}/5 ${DownloadUIStag
     }
 
     _pb.progress = _pb.progress.truncate() +
-        map((completed) ? 100 : 0, 0, 100, (1 / 5) * 4, (1 / 5) * 5);
+        map((completed) ? 100 : 0, 0, 100, (1 / _maxStageUI) * 4,
+            (1 / _maxStageUI) * 5);
 
     final templateStr = """Merging final output to $finalVidOut
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStage.stageFFmpegMergeFiles.index}/5 ${DownloadUIStage.stageFFmpegMergeFiles.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
