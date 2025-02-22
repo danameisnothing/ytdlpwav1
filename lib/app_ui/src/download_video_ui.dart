@@ -145,11 +145,8 @@ final class DownloadVideoUI {
         .flush(); // https://github.com/dart-lang/sdk/issues/25277 (we do need to await it)
   }
 
-  Future<void> printDownloadVideoUI(
-      DownloadUIStageTemplate stage,
-      DownloadReturnStatus status,
-      int idxInVideoInfo,
-      bool isDownloadingPreferredFormat) async {
+  Future<void> printDownloadVideoUI(DownloadUIStageTemplate stage,
+      DownloadReturnStatus status, int idxInVideoInfo) async {
     final prog = _getDownloadVideoProgDataMapped(status);
 
     final String? progStr = (prog != null) ? prog['percentage'] : null;
@@ -185,7 +182,7 @@ final class DownloadVideoUI {
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''} | DEBUG isDownloadingPreferredFormat: ${(!isDownloadingPreferredFormat) ? 'false' : 'true'}""";
+Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
 
     await _printUI(templateStr);
   }

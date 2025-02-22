@@ -300,9 +300,52 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
         TemplateReplacements.thumbIn: thumbFP,
         TemplateReplacements.finalOut: targetOutFP
       });
-  logger.fine('Started FFmpeg process for merging files on to the final video');
+  logger.fine('Started FFmpeg process for merging files to the final video');
 
   yield null;
 
+  yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
+}
+
+Stream<FFmpegMergeFilesStatus> reencodeAndMergeFiles(
+    Preferences pref,
+    String baseVideoFP,
+    List<String> captionFP,
+    String thumbFP,
+    String targetOutFP) async* {
+  final proc = await ProcessRunner.spawn(
+      name: 'ffmpeg',
+      argument: pref.ffmpegReencodeAndCombine,
+      replacements: {
+        TemplateReplacements.videoInput: baseVideoFP,
+        TemplateReplacements.captionsInputFlags: List<String>.generate(
+                captionFP.length, (i) => '-i "${captionFP.elementAt(i)}"',
+                growable: false)
+            .join(' '),
+        TemplateReplacements.captionTrackMappingMetadata: List<String>.generate(
+                captionFP.length,
+                (i) =>
+                    '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
+                growable: false)
+            .join(' '),
+        TemplateReplacements.thumbIn: thumbFP,
+        TemplateReplacements.finalOut: targetOutFP
+      });
+  logger.fine(
+      'Started FFmpeg process for re-encoding and merging files to the final video');
+
+  await for (final tmpO in proc.stdout) {
+    // Accounting for possible carriage return and newline characters again
+    for (String tmpO2 in String.fromCharCodes(tmpO).split('\r')) {
+      for (String output in tmpO2.split('\n')) {
+        output = output.trim();
+        if (output.isEmpty) continue;
+
+        logger.info(output);
+        // TODO: Assemble the keys into one map (through a function)
+      }
+    }
+  }
+  // TODO: Logic to capture progress
   yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
 }

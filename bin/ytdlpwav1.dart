@@ -172,8 +172,7 @@ Future<void> downloadVideosLogic(
           break;
       }
 
-      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData),
-          isDownloadingPreferredFormat);
+      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
       return info;
     }).last;
 
@@ -209,7 +208,7 @@ Future<void> downloadVideosLogic(
       //break;
       case ProgressStateStayedUninitializedMessage():
         logger.warning(
-            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
@@ -240,21 +239,30 @@ Future<void> downloadVideosLogic(
 
     final mergedFinalVideoFP =
         '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
-    final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
-        ffThumbExtractedPath, mergedFinalVideoFP);
-    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
 
-    final ret2 = await ffMerge.last;
-    if (ret2!.eCode != 0) {
-      await cleanupGeneratedFiles(
-          captionFPs: captionFP,
-          thumbFP: ffThumbExtractedPath,
-          endVideoFP: endVideoPath!);
-      // TODO: more verbose error message
-      hardExit(
-          'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
+    if (isDownloadingPreferredFormat) {
+      final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
+          ffThumbExtractedPath, mergedFinalVideoFP);
+      ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
+
+      final ret2 = await ffMerge.last;
+      if (ret2!.eCode != 0) {
+        await cleanupGeneratedFiles(
+            captionFPs: captionFP,
+            thumbFP: ffThumbExtractedPath,
+            endVideoFP: endVideoPath!);
+        // TODO: more verbose error message
+        hardExit(
+            'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
+      }
+      ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
+    } else {
+      // TODO: proper logic
+      final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
+          captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
+
+      await ffReencodeAndMerge.last;
     }
-    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
 
     await cleanupGeneratedFiles(
         captionFPs: captionFP,

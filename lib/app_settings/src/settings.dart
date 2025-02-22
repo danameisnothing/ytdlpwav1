@@ -26,7 +26,9 @@ final class Preferences {
   final ffmpegExtractThumbnailCmd =
       'ffmpeg -hide_banner -i "<video_input>" -map 0:2 -update 1 -frames:v 1 <thumb_out>';
   final ffmpegCombineFinalVideo =
-      'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -map 0:0 -map 0:1 -c:v copy -c:a copy <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
+      'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -map 0:0 -map 0:1 -c:v copy -c:a copy <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
+  final ffmpegReencodeAndCombine =
+      'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
 
   final debugLogFileName = 'ytdlpwav1_debug_log.txt';
   final videoDataFileName = 'ytdlpwav1_video_data.json';
