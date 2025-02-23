@@ -29,6 +29,8 @@ final class Preferences {
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -map 0:0 -map 0:1 -c:v copy -c:a copy <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
   final ffmpegReencodeAndCombine =
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
+  final ffprobeFetchVideoInfo =
+      'ffprobe -v quiet -show_format -show_streams -count_frames -print_format json "VOTE you have 1-4 days left.mkv"';
 
   final debugLogFileName = 'ytdlpwav1_debug_log.txt';
   final videoDataFileName = 'ytdlpwav1_video_data.json';

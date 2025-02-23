@@ -222,4 +222,17 @@ Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${Down
 
     await _printUI(templateStr);
   }
+
+  Future<void> printReencodeAndMergeFilesUI(ReencodeAndMergeReturnStatus state,
+      Map<String, dynamic> ffprobeData, String finalVidOut) async {
+    _pb.progress = _pb.progress.truncate() +
+        map((false) ? 100 : 0, 0, 100, (1 / _maxStageUI) * 5,
+            (1 / _maxStageUI) * 6);
+
+    final templateStr = """Merging final output to $finalVidOut
+[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
+Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
+
+    await _printUI(templateStr);
+  }
 }

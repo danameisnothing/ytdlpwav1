@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
@@ -130,6 +131,34 @@ final class FFmpegMergeFilesStatus {
   final int eCode;
 
   FFmpegMergeFilesStatus({required this.eCode});
+}
+
+abstract class ReencodeAndMergeReturnStatus {
+  ReencodeAndMergeReturnStatus();
+
+  factory ReencodeAndMergeReturnStatus.progress(
+          final Map<String, dynamic> progressData) =>
+      ReencodeAndMergeProgress(progressData: progressData);
+  factory ReencodeAndMergeReturnStatus.processNonZeroExit(final int eCode) =>
+      ReencodeAndMergeProcessNonZeroExitCode(eCode: eCode);
+  factory ReencodeAndMergeReturnStatus.success() => ReencodeAndMergeSuccess();
+}
+
+final class ReencodeAndMergeProgress extends ReencodeAndMergeReturnStatus {
+  final Map<String, dynamic> progressData;
+
+  ReencodeAndMergeProgress({required this.progressData}) : super();
+}
+
+final class ReencodeAndMergeSuccess extends ReencodeAndMergeReturnStatus {
+  ReencodeAndMergeSuccess() : super();
+}
+
+final class ReencodeAndMergeProcessNonZeroExitCode
+    extends ReencodeAndMergeReturnStatus {
+  final int eCode;
+
+  ReencodeAndMergeProcessNonZeroExitCode({required this.eCode}) : super();
 }
 
 // TODO: cleanup
@@ -307,7 +336,7 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
   yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
 }
 
-Stream<FFmpegMergeFilesStatus> reencodeAndMergeFiles(
+Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
     Preferences pref,
     String baseVideoFP,
     List<String> captionFP,
@@ -336,16 +365,25 @@ Stream<FFmpegMergeFilesStatus> reencodeAndMergeFiles(
 
   await for (final tmpO in proc.stdout) {
     // Accounting for possible carriage return and newline characters again
+    final Map<String, dynamic> progressData = <String, dynamic>{};
     for (String tmpO2 in String.fromCharCodes(tmpO).split('\r')) {
       for (String output in tmpO2.split('\n')) {
         output = output.trim();
         if (output.isEmpty) continue;
 
-        logger.info(output);
-        // TODO: Assemble the keys into one map (through a function)
+        progressData.addAll(
+            {output.split('=').elementAt(0): output.split('=').elementAt(1)});
       }
     }
+    yield ReencodeAndMergeReturnStatus.progress(progressData);
   }
-  // TODO: Logic to capture progress
-  yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
+
+  if (await proc.process.exitCode != 0) {
+    yield ReencodeAndMergeReturnStatus.processNonZeroExit(
+        await proc.process.exitCode);
+    return;
+  }
+
+  yield ReencodeAndMergeReturnStatus.success();
+  return;
 }
