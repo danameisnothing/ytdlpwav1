@@ -7,13 +7,27 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
+// TODO: ENUM DOC!
+// FIXME: necessary with these enums having the same values?
+enum FFmpegExtractThumb { started, completed }
+
+// TODO: ENUM DOC!
+// FIXME: necessary with these enums having the same values?
+enum FFmpegMergeFilesState { started, completed }
+
+// TODO: ENUM DOC!
+// FIXME: necessary with these enums having the same values?
+enum FFprobeFetchVideoDataState { started, completed }
+
 enum DownloadUIStageTemplate {
   stageUninitialized(uiStageMapping: 'Uninitialized'),
   stageDownloadingCaptions(uiStageMapping: 'Downloading caption(s)'),
   stageDownloadingVideo(uiStageMapping: 'Downloading video'),
   stageDownloadingAudio(uiStageMapping: 'Downloading audio'),
   stageFFmpegExtractingThumbnail(uiStageMapping: 'Extracting thumbnail'),
-  stageFFmpegReencodingVideo(uiStageMapping: 'Re-encoding video to AV1'),
+  stageFFprobeFetchVideoData(uiStageMapping: 'Fetching video data'),
+  stageFFmpegReencodeAndMergeVideo(
+      uiStageMapping: 'Re-encoding video to AV1 and merging files'),
   stageFFmpegMergeFiles(uiStageMapping: 'Merging files');
 
   const DownloadUIStageTemplate({required this.uiStageMapping});
@@ -38,10 +52,10 @@ final class DownloadVideoUI {
   void onDownloadFailure() => _pb.progress = _pb.progress.floor() + 1;
 
   void setUseAllStageTemplates(bool useAll) {
-    // Need to update when we add more stages
+    // FIXME: Need to update when we add more stages
     _maxStageUI = (useAll)
-        ? DownloadUIStageTemplate.values.length
-        : DownloadUIStageTemplate.values.length - 1;
+        ? DownloadUIStageTemplate.values.length - 1
+        : DownloadUIStageTemplate.values.length - 2;
   }
 
   String _getDownloadVideoMediaKindMapping(DownloadReturnStatus status) {
@@ -223,15 +237,33 @@ Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${Down
     await _printUI(templateStr);
   }
 
-  Future<void> printReencodeAndMergeFilesUI(ReencodeAndMergeReturnStatus state,
-      Map<String, dynamic> ffprobeData, String finalVidOut) async {
+  Future<void> printFetchingVideoDataUI(
+      FFprobeFetchVideoDataState state) async {
+    bool completed = false;
+    if (state == FFprobeFetchVideoDataState.completed) {
+      completed = true;
+    }
+
     _pb.progress = _pb.progress.truncate() +
-        map((false) ? 100 : 0, 0, 100, (1 / _maxStageUI) * 5,
+        map((completed) ? 100 : 0, 0, 100, (1 / _maxStageUI) * 4,
+            (1 / _maxStageUI) * 5);
+
+    final templateStr =
+        """[${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
+Stage ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStageMapping}""";
+
+    await _printUI(templateStr);
+  }
+
+  Future<void> printReencodeAndMergeFilesUI(
+      double percentageProg, String finalVidOut) async {
+    _pb.progress = _pb.progress.truncate() +
+        map(percentageProg, 0, 100, (1 / _maxStageUI) * 5,
             (1 / _maxStageUI) * 6);
 
-    final templateStr = """Merging final output to $finalVidOut
+    final templateStr = """Re-encoding and merging final output to $finalVidOut
 [${_pb.generateProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}""";
 
     await _printUI(templateStr);
   }

@@ -199,7 +199,7 @@ Future<void> downloadVideosLogic(
         // TODO: More robust error handling!
         // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
         logger.warning(
-            'Video named ${videoData.title} failed to be downloaded, continuing [NOT REALLY THIS IS TESTING THE PERFECT FORMAT DOWNLOAD FOR NOW!]');
+            'Video named ${videoData.title} failed to be downloaded, continuing');
         // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
@@ -207,13 +207,13 @@ Future<void> downloadVideosLogic(
         continue;
       //break;
       case ProgressStateStayedUninitializedMessage():
+        // TODO: save progress too!
         logger.warning(
-            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, skipping... [NOT REALLY THIS IS QUITTING THE PROGRAM]');
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, skipping...');
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
         continue; // FIXME: for dev purposes
-      //break;
     }
 
     // TODO: save progress on every loop!
@@ -230,6 +230,7 @@ Future<void> downloadVideosLogic(
           thumbFP: ffThumbExtractedPath,
           endVideoFP: endVideoPath!);
       // TODO: more verbose error message
+      // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
       hardExit(
           'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
     }
@@ -252,26 +253,43 @@ Future<void> downloadVideosLogic(
             thumbFP: ffThumbExtractedPath,
             endVideoFP: endVideoPath!);
         // TODO: more verbose error message
+        // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
         hardExit(
             'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
       }
       ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
     } else {
+      ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
       final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
+      ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
+
       // TODO: proper logic
       final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
           captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
 
       final last = await ffReencodeAndMerge.asyncMap((info) async {
-        switch (info) {
-          case ReencodeAndMergeProgress():
-            logger.info((int.parse(info.progressData['frame']) /
-                    int.parse(formerVideoData['nb_read_frames'])) *
-                100); // *Assume* the video stream is in the first stream
-            break;
+        if (info is ReencodeAndMergeProgress) {
+          ui.printReencodeAndMergeFilesUI(
+              (int.parse(info.progressData['frame']) /
+                      int.parse((formerVideoData['streams'] as List<dynamic>)[0]
+                          ['nb_read_frames'])) *
+                  100,
+              mergedFinalVideoFP); // *Assume* the video stream is in the first stream
         }
+
         return info;
       }).last;
+
+      if (last is ReencodeAndMergeProcessNonZeroExitCode) {
+        // TODO: More robust error handling!
+        logger.warning(
+            'An error occured while re-encoding video ${videoData.title} to AV1 and merging it, continuing');
+        // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+        await cleanupGeneratedFiles(
+            captionFPs: captionFP, endVideoFP: endVideoPath);
+        ui.onDownloadFailure();
+        continue;
+      }
     }
 
     await cleanupGeneratedFiles(

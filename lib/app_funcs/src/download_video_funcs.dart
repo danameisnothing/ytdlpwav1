@@ -18,14 +18,6 @@ enum DownloadProgressState {
   videoAudioMerged
 }
 
-// TODO: ENUM DOC!
-// FIXME: necessary with these enums having the same values?
-enum FFmpegExtractThumb { started, completed }
-
-// TODO: ENUM DOC!
-// FIXME: necessary with these enums having the same values?
-enum FFmpegMergeFilesState { started, completed }
-
 abstract class DownloadReturnStatus {
   DownloadReturnStatus();
 
