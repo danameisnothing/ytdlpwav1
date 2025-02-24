@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
@@ -217,7 +218,8 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
             (output.endsWith('.mkv') ||
                 output.endsWith('.webm') ||
                 output.endsWith('.mp4'))) {
-          if (state == DownloadProgressState.captionDownloaded) {
+          if (state == DownloadProgressState.captionDownloaded ||
+              state == DownloadProgressState.uninitialized) {
             state = DownloadProgressState.videoDownloading;
             logger.fine('Found video soon-to-be downloaded : $output');
           } else {
@@ -386,4 +388,20 @@ Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
 
   yield ReencodeAndMergeReturnStatus.success();
   return;
+}
+
+Future<Map<String, dynamic>> fetchVideoInfo(
+    Preferences pref, String videoPath) async {
+  final proc = await ProcessRunner.spawn(
+      name: 'ffprobe',
+      argument: pref.ffprobeFetchVideoInfo,
+      replacements: {TemplateReplacements.videoInput: videoPath});
+
+  final buff = StringBuffer();
+  await for (final str in proc.stdout) {
+    buff.write(String.fromCharCodes(str));
+  }
+
+  // FIXME: error handling
+  return jsonDecode(buff.toString());
 }

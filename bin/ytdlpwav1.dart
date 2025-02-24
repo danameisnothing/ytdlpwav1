@@ -257,11 +257,19 @@ Future<void> downloadVideosLogic(
       }
       ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
     } else {
+      final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
       // TODO: proper logic
       final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
           captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
 
-      final lastRet = await ffReencodeAndMerge.asyncMap((info) async {
+      final last = await ffReencodeAndMerge.asyncMap((info) async {
+        switch (info) {
+          case ReencodeAndMergeProgress():
+            logger.info((int.parse(info.progressData['frame']) /
+                    int.parse(formerVideoData['nb_read_frames'])) *
+                100); // *Assume* the video stream is in the first stream
+            break;
+        }
         return info;
       }).last;
     }
