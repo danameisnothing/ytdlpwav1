@@ -3,8 +3,22 @@ import 'dart:convert';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
-// TODO: document where if this function returns nothing, it means it failed to fetch the playlist quantity
-Future<int?> getPlaylistQuantity(
+final class ProcessExitNonZeroException implements Exception {
+  final String msg;
+  final int? eCode;
+
+  ProcessExitNonZeroException([this.msg = '', this.eCode]);
+
+  @override
+  String toString() =>
+      'ProcessNonZeroException: $msg ${(eCode != null) ? '(exit code $eCode)' : ''}';
+}
+
+// FIXME: add support for more authentication options when we do support them
+/// Returns the playlist quantity of a YouTube playlist, with a given cookiefile path for authentication
+///
+/// Throws a [ProcessExitNonZeroException] if yt-dlp exits with a non-zero exit code
+Future<int> getPlaylistQuantity(
     Preferences pref, String cookieFile, String playlistId) async {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
@@ -19,7 +33,9 @@ Future<int?> getPlaylistQuantity(
       .then((e) => String.fromCharCodes(e), onError: (_) => null);
 
   if (await proc.process.exitCode != 0) {
-    return null;
+    throw ProcessExitNonZeroException(
+        'FFmpeg exited abnormally while fetching playlist quantity of playlist ID $playlistId',
+        await proc.process.exitCode);
   }
 
   logger.fine('Got $data on playlist count');

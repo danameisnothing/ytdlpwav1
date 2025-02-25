@@ -99,7 +99,7 @@ enum TemplateReplacements {
 sealed class ProcessRunner {
   static final List<Process> _processes = <Process>[];
 
-  // TODO: doc
+  /// Spawns a process with a given name and template arguments, as well as a list of [replacements] for the template command
   static Future<
           ({
             Stream<List<int>> stdout,
@@ -141,7 +141,7 @@ sealed class ProcessRunner {
     return (stdout: streams.stdout, stderr: streams.stderr, process: proc);
   }
 
-  // TODO: doc
+  /// Tries to kill all of the processes that are still active
   static void killAll() {
     for (final proc in List<Process>.from(_processes)) {
       // FIXME: BROKEN LOGIC!
