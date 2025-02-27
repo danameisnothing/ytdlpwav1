@@ -30,7 +30,7 @@ final class Preferences {
   final ffmpegReencodeAndCombine =
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
   final ffprobeFetchVideoInfo =
-      'ffprobe -v quiet -show_format -show_streams -count_frames -print_format json <video_input>';
+      'ffprobe -v quiet -show_format -show_streams -count_packets -print_format json <video_input>';
 
   final debugLogFileName = 'ytdlpwav1_debug_log.txt';
   final videoDataFileName = 'ytdlpwav1_video_data.json';

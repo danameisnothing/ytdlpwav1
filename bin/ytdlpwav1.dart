@@ -143,20 +143,9 @@ Future<void> downloadVideosLogic(
 
     DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
 
-    // Assume we are not able to download in the preferred codec
-    if (await resBroadcast.first is ProcessNonZeroExitMessage) {
-      logger.warning(
-          'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
-      isDownloadingPreferredFormat = false;
-
-      resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-              pref, pref.videoRegularCmd, videoData)
-          .asBroadcastStream();
-      ui.setUseAllStageTemplates(true);
-    }
-
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
-    final lastRet = await resBroadcast.asyncMap((info) async {
+    // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
+    final lastRetStream = resBroadcast.asyncMap((info) async {
       if (info is CaptionDownloadedMessage) {
         captionFP.add(info.captionFilePath);
         logger.fine('Found ${info.captionFilePath} as caption from logic');
@@ -179,7 +168,21 @@ Future<void> downloadVideosLogic(
 
       await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
       return info;
-    }).last;
+    }).asBroadcastStream();
+
+    // Assume we are not able to download in the preferred codec
+    if (await lastRetStream.first is ProcessNonZeroExitMessage) {
+      logger.warning(
+          'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
+      isDownloadingPreferredFormat = false;
+
+      resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+              pref, pref.videoRegularCmd, videoData)
+          .asBroadcastStream();
+      ui.setUseAllStageTemplates(true);
+    }
+
+    final lastRet = await lastRetStream.last;
 
     logger.fine('End result received : $captionFP');
 
@@ -279,7 +282,7 @@ Future<void> downloadVideosLogic(
           ui.printReencodeAndMergeFilesUI(
               (int.parse(info.progressData['frame']) /
                       int.parse((formerVideoData['streams'] as List<dynamic>)[0]
-                          ['nb_read_frames'])) *
+                          ['nb_read_packets'])) *
                   100,
               mergedFinalVideoFP); // *Assume* the video stream is in the first stream
         }
