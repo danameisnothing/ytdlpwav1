@@ -191,7 +191,7 @@ final class DownloadVideoUI {
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
+Stage ${stage.index}/${_maxStageUI - 1} ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
 
     await _printUI(templateStr);
   }
@@ -209,7 +209,7 @@ Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsS
 
     final templateStr = """Extracting PNG from $videoTarget
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.index}/${_maxStageUI - 1} ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
@@ -227,7 +227,7 @@ Stage ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.index}/$_maxStage
 
     final templateStr = """Merging final output to $finalVidOut
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/${_maxStageUI - 1} ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
@@ -245,7 +245,7 @@ Stage ${DownloadUIStageTemplate.stageFFmpegMergeFiles.index}/$_maxStageUI ${Down
 
     final templateStr =
         """[${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.index}/${_maxStageUI - 1} ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStageMapping}""";
 
     await _printUI(templateStr);
   }
@@ -258,7 +258,7 @@ Stage ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.index}/$_maxStageUI $
 
     final templateStr = """Re-encoding and merging final output to $finalVidOut
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.index}/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}""";
+Stage ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.index}/${_maxStageUI - 1} ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}""";
 
     await _printUI(templateStr);
   }

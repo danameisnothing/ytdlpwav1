@@ -29,8 +29,7 @@ Future<int> getPlaylistQuantity(
       });
   logger.fine('Started yt-dlp process for fetching playlist quantity');
 
-  final data = await proc.stdout.first
-      .then((e) => String.fromCharCodes(e), onError: (_) => null);
+  final data = await proc.stdout.first.then((e) => String.fromCharCodes(e));
 
   if (await proc.process.exitCode != 0) {
     throw ProcessExitNonZeroException(
@@ -52,7 +51,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
     Preferences pref, String cookieFile, String playlistId) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
-      argument: pref.fetchPlaylistItemCountCmd,
+      argument: pref.fetchVideoInfosCmd,
       replacements: {
         TemplateReplacements.cookieFile: cookieFile,
         TemplateReplacements.playlistId: playlistId
@@ -72,7 +71,8 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
           int.parse(uploadDate.substring(0, 4)),
           int.parse(uploadDate.substring(4, 6)),
           int.parse(uploadDate.substring(6, 8)),
-        ));
+        ),
+        false);
     logger.fine('Got update on stdout, parsed as $parsed');
     yield parsed;
   }

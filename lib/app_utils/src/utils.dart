@@ -48,36 +48,56 @@ String getFractNumberPartStr(num n) {
   return subFract.substring(1);
 }
 
+Future<bool> hasProgramInstalled(String program) async {
+  // TODO: tested only on Windows, test on other platforms too!
+  for (final path in Platform.environment['PATH']!.split(';')) {
+    if (!await Directory(path).exists()) continue;
+    for (final file in await Directory(path).list().toList()) {
+      final fName = file.uri.pathSegments.last;
+      if (Platform.isWindows) {
+        if (fName.contains(program) && fName.endsWith('.exe')) return true;
+      } else {
+        if (fName.contains(program)) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 final class VideoInPlaylist {
   final String title;
   final String id;
   final String description;
   final String uploader;
   final DateTime uploadDate;
+  bool hasDownloadedSuccessfully;
 
-  VideoInPlaylist(
-      this.title, this.id, this.description, this.uploader, this.uploadDate);
+  VideoInPlaylist(this.title, this.id, this.description, this.uploader,
+      this.uploadDate, this.hasDownloadedSuccessfully);
 
   VideoInPlaylist.fromJson(Map<String, dynamic> json)
       : title = json['title'],
         id = json['id'],
         description = json['description'],
         uploader = json['uploader'],
-        uploadDate = DateTime.parse(json['uploadDate']);
+        uploadDate = DateTime.parse(json['uploadDate']),
+        hasDownloadedSuccessfully = json['hasDownloadedSuccessfully'];
 
   Map<String, dynamic> toJson() => {
         'title': title,
         'id': id,
         'description': description,
         'uploader': uploader,
-        'uploadDate': uploadDate.toIso8601String()
+        'uploadDate': uploadDate.toIso8601String(),
+        'hasDownloadedSuccessfully': hasDownloadedSuccessfully
       };
 
   @override
   String toString() => toJson().toString();
 }
 
-// An enum containing the string to be replaced in the command templates
+/// An enum containing the string to be replaced in the command templates
 enum TemplateReplacements {
   cookieFile(template: '<cookie_file>'),
   playlistId(template: '<playlist_id>'),
@@ -96,6 +116,7 @@ enum TemplateReplacements {
 }
 
 // TODO: change to singleton?
+// TODO: docs
 sealed class ProcessRunner {
   static final List<Process> _processes = <Process>[];
 

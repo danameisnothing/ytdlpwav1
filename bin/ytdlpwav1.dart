@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:args/command_runner.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:logging/logging.dart';
 import 'package:cli_spin/cli_spin.dart';
@@ -32,6 +33,21 @@ Future<void> cleanupGeneratedFiles(
     final fThumb = File(thumbFP);
     if (await fThumb.exists()) await fThumb.delete();
   }
+}
+
+Future<void> onDownloadFailureBeforeContinuing(
+    Preferences pref, List<VideoInPlaylist> videos, VideoInPlaylist vid) async {
+  final videoDataFile = File(pref.videoDataFileName);
+
+  print('before $videos');
+  videos.firstWhere((e) => e == vid).hasDownloadedSuccessfully = true;
+  print('after $videos');
+
+  final convertedRes =
+      jsonEncode({'res': videos.map((e) => e.toJson()).toList()});
+
+  await videoDataFile.writeAsString(convertedRes,
+      flush: true, mode: FileMode.write);
 }
 
 // TODO: split across multiple files
@@ -80,7 +96,7 @@ Future<void> fetchVideosLogic(
 
   logger.fine('Converted video info map to $convertedRes');
 
-  await videoDataFile.writeAsString(convertedRes);
+  await videoDataFile.writeAsString(convertedRes, flush: true);
 }
 
 Future<void> downloadVideosLogic(
@@ -123,7 +139,7 @@ Future<void> downloadVideosLogic(
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
             pref, pref.videoPreferredCmd, videoData)
         .asBroadcastStream();
-    ui.setUseAllStageTemplates(true);
+    ui.setUseAllStageTemplates(false);
 
     DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
 
@@ -136,7 +152,7 @@ Future<void> downloadVideosLogic(
       resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
               pref, pref.videoRegularCmd, videoData)
           .asBroadcastStream();
-      ui.setUseAllStageTemplates(false);
+      ui.setUseAllStageTemplates(true);
     }
 
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
@@ -149,7 +165,6 @@ Future<void> downloadVideosLogic(
         logger.fine('Found $endVideoPath as merged video and audio from logic');
       }
 
-      // FIXME:
       switch (info) {
         case CaptionDownloadingMessage() || CaptionDownloadedMessage():
           stage = DownloadUIStageTemplate.stageDownloadingCaptions;
@@ -194,16 +209,18 @@ Future<void> downloadVideosLogic(
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
+        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
         continue;
       //break;
       case ProgressStateStayedUninitializedMessage():
         // TODO: save progress too!
         logger.warning(
-            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, skipping...');
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, continuing...');
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
-        continue; // FIXME: for dev purposes
+        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
+        continue;
     }
 
     // TODO: save progress on every loop!
@@ -278,6 +295,7 @@ Future<void> downloadVideosLogic(
         await cleanupGeneratedFiles(
             captionFPs: captionFP, endVideoFP: endVideoPath);
         ui.onDownloadFailure();
+        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
         continue;
       }
     }
@@ -289,48 +307,37 @@ Future<void> downloadVideosLogic(
   }
 }
 
-void main(List<String> arguments) async {
+void main(List<String> args) async {
   // TODO: Add detection to livestreams on playlist, as that will show the underlying FFmpeg output, with seemingly none of the usual yt-dlp output regarding downloading
-  final argParser = ArgParser();
   // TODO: Provide other methods of auth (https://yt-dlp.memoryview.in/docs/advanced-features/authentication-and-cookies-in-yt-dlp), and maybe methods of checking if the cookie file is outdated, as it could lead to missing subtitles in a language (see https://www.youtube.com/watch?v=LuVAWbg4kns for example)
-  argParser.addOption('cookie_file',
-      abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true);
-  argParser.addOption('playlist_id',
-      abbr: 'p', help: 'The target YouTube playlist ID', mandatory: false);
-  argParser.addOption('output_dir',
-      abbr: 'o',
-      help: 'The target output directory of downloaded videos',
-      mandatory: false);
-  argParser.addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
+  final argParser = ArgParser()
+    ..addOption('cookie_file',
+        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
+    ..addOption('playlist_id',
+        abbr: 'p', help: 'The target YouTube playlist ID', mandatory: false)
+    ..addOption('output_dir',
+        abbr: 'o',
+        help: 'The target output directory of downloaded videos',
+        mandatory: false)
+    ..addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
 
   late final ArgResults parsedArgs;
   try {
-    parsedArgs = argParser.parse(arguments);
+    parsedArgs = argParser.parse(args);
   } on ArgParserException catch (_) {
-    // TODO: add help message for available commands
-    hardExit('TODO LIST AVAILABLE COMMANDS');
+    // We cannot use hardExit since we haven't set up the logger levels yet
+    print(argParser.usage);
+    exit(1);
   }
 
   final cookieFile = parsedArgs.option('cookie_file');
   final playlistId = parsedArgs.option('playlist_id');
   final outDir = parsedArgs.option('output_dir');
 
-  if (cookieFile == null) {
-    hardExit('"cookie_file" argument not specified or empty');
-  }
-
-  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
-
   final preferences = Preferences(
       cookieFilePath: cookieFile,
       playlistId: playlistId,
       outputDirPath: outDir);
-
-  ProcessSignal.sigint.watch().listen((_) {
-    logger.info('Received SIGINT, cleaning up');
-    ProcessRunner.killAll();
-    exit(0);
-  });
 
   Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((rec) {
@@ -347,8 +354,7 @@ void main(List<String> arguments) async {
         break;
     }
     if (rec.level == Level.FINE) {
-      final logFile = File(
-          preferences.debugLogFileName); // Guaranteed to exist at this point
+      final logFile = File(preferences.debugLogFileName);
       logFile.writeAsStringSync(
           '${rec.time.toIso8601String()} : ${rec.message}${Platform.lineTerminator}',
           flush: true,
@@ -357,6 +363,17 @@ void main(List<String> arguments) async {
     }
     print('$levelName ${rec.message}');
   });
+
+  ProcessSignal.sigint.watch().listen((_) {
+    logger.info('Received SIGINT, cleaning up');
+    ProcessRunner.killAll();
+    exit(0);
+  });
+
+  if (cookieFile == null) {
+    hardExit('"cookie_file" argument not specified or empty');
+  }
+  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
@@ -369,17 +386,19 @@ void main(List<String> arguments) async {
     }
   }
 
-  // No idea what is it for Unix systems
-  // TODO: Figure out for Unix systems
-  // TODO: replace (based on https://github.com/pypa/distutils/blob/main/distutils/spawn.py)
-  if (Platform.isWindows) {
-    if ((await Process.run('where', ['yt-dlp'])).exitCode != 0) {
-      hardExit(
-          'Unable to find the yt-dlp command. Verify that yt-dlp is mounted in PATH');
-    }
+  if (!await hasProgramInstalled('yt-dlp')) {
+    hardExit(
+        'Unable to find the yt-dlp program. Verify that yt-dlp is mounted in PATH');
   }
-  // TODO: The same detection logic for FFmpeg
-  // TODO: The same detection logic for FFprobe
+  if (!await hasProgramInstalled('ffprobe')) {
+    hardExit(
+        'Unable to find the ffprobe command. Verify that ffprobe is mounted in PATH');
+  }
+  if (!await hasProgramInstalled('ffmpeg')) {
+    hardExit(
+        'Unable to find the ffmpeg command. Verify that ffmpeg is mounted in PATH');
+  }
+
   // TODO: check for yt-dlp updates. Out-of-date versions oftentimes causes random HTTP 403 Forbidden errors
 
   // We need playlist_id if the user is intending to choose this mode, but we don't explicitly need output_dir to be set
