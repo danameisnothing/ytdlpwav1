@@ -60,14 +60,11 @@ final class DownloadVideoUI {
 
   String _getDownloadVideoMediaKindMapping(DownloadReturnStatus status) {
     switch (status) {
-      case CaptionDownloadingMessage():
-      case CaptionDownloadedMessage():
+      case CaptionDownloadingMessage() || CaptionDownloadedMessage():
         return chalk.magentaBright('(caption)');
-      case VideoDownloadingMessage():
-      case VideoDownloadedMessage():
+      case VideoDownloadingMessage() || VideoDownloadedMessage():
         return chalk.blueBright('(video)');
-      case AudioDownloadingMessage():
-      case AudioDownloadedMessage():
+      case AudioDownloadingMessage() || AudioDownloadedMessage():
         return chalk.greenBright('(audio)');
       default:
         return '';
@@ -113,12 +110,12 @@ final class DownloadVideoUI {
 
   bool _getDownloadVideoIsStillDownloading(DownloadReturnStatus status) {
     switch (status) {
-      case CaptionDownloadingMessage():
-      case CaptionDownloadedMessage():
-      case VideoDownloadingMessage():
-      case VideoDownloadedMessage():
-      case AudioDownloadingMessage():
-      case AudioDownloadedMessage():
+      case CaptionDownloadingMessage() ||
+            CaptionDownloadedMessage() ||
+            VideoDownloadingMessage() ||
+            VideoDownloadedMessage() ||
+            AudioDownloadingMessage() ||
+            AudioDownloadedMessage():
         return true;
       default:
         return false;
@@ -127,6 +124,7 @@ final class DownloadVideoUI {
 
   String _getDownloadVideoMediaNameMapping(
       DownloadReturnStatus status, int idxInVideoInfo) {
+    // FIXME:
     switch (status) {
       case CaptionDownloadingMessage():
         return status.captionFilePath;
@@ -172,19 +170,16 @@ final class DownloadVideoUI {
 
       // FIXME:
       switch (status) {
-        case CaptionDownloadingMessage():
-        case CaptionDownloadedMessage():
+        case CaptionDownloadingMessage() || CaptionDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 0,
                   (1 / _maxStageUI) * 1);
           break;
-        case VideoDownloadingMessage():
-        case VideoDownloadedMessage():
+        case VideoDownloadingMessage() || VideoDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 1,
                   (1 / _maxStageUI) * 2);
-        case AudioDownloadingMessage():
-        case AudioDownloadedMessage():
+        case AudioDownloadingMessage() || AudioDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 2,
                   (1 / _maxStageUI) * 3);

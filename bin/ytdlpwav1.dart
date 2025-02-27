@@ -51,11 +51,6 @@ Future<void> fetchVideosLogic(
   final playlistQuantity =
       await getPlaylistQuantity(pref, cookieFile, playlistId);
   spinner.stop();
-  if (playlistQuantity == null) {
-    // TODO: improve error message
-    hardExit(
-        'An error occured while fetching playlist quantity. Use the --debug flag to see more details');
-  }
 
   logger.info('Fetched video quantity in playlist');
 
@@ -73,7 +68,7 @@ Future<void> fetchVideosLogic(
           chalk.brightCyan('${((current / total) * 100).toStringAsFixed(1)}%');
       final partStr =
           chalk.brightMagenta('${current.truncate()}/${total.truncate()}');
-      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr'; // TODO: ADD ETA LOGIC!
+      return '[${ProgressBar.innerProgressBarIdent}] · $percStr · $partStr';
     });
   }
   await playlistFetchInfoProgress.finishRender();
@@ -156,19 +151,14 @@ Future<void> downloadVideosLogic(
 
       // FIXME:
       switch (info) {
-        case CaptionDownloadingMessage():
-        case CaptionDownloadedMessage():
+        case CaptionDownloadingMessage() || CaptionDownloadedMessage():
           stage = DownloadUIStageTemplate.stageDownloadingCaptions;
           break;
-        case VideoDownloadingMessage():
-        case VideoDownloadedMessage():
+        case VideoDownloadingMessage() || VideoDownloadedMessage():
           stage = DownloadUIStageTemplate.stageDownloadingVideo;
           break;
-        case AudioDownloadingMessage():
-        case AudioDownloadedMessage():
+        case AudioDownloadingMessage() || AudioDownloadedMessage():
           stage = DownloadUIStageTemplate.stageDownloadingAudio;
-          break;
-        default:
           break;
       }
 

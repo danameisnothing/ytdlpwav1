@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
-// TODO: ENUM DOC!
+/// The possible states of the download process
 enum DownloadProgressState {
   /// Uninitialized means we haven't encountered an output that would indicate that yt-dlp is downloading video or audio
   uninitialized,

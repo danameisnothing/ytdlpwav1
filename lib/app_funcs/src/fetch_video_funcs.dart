@@ -44,7 +44,10 @@ Future<int> getPlaylistQuantity(
       as int; // Data can't possibly be null because of the exitCode check
 }
 
-// TODO: document where if this function returns nothing, it means it failed to fetch the playlist quantity
+// FIXME: add support for more authentication options when we do support them
+/// Returns a stream of [VideoInPlaylist] objects for every video in the YouTube playlist, with a given cookiefile path for authentication
+///
+/// Throws a [ProcessExitNonZeroException] if yt-dlp exits with a non-zero exit code
 Stream<VideoInPlaylist> getPlaylistVideoInfos(
     Preferences pref, String cookieFile, String playlistId) async* {
   final proc = await ProcessRunner.spawn(
@@ -75,9 +78,8 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
   }
 
   if (await proc.process.exitCode != 0) {
-    // FIXME: fail early instead!
-    //return null;
-    hardExit(
-        'An error occured while fetching video infos. Use the --debug flag to see more details');
+    throw ProcessExitNonZeroException(
+        'FFmpeg exited abnormally while fetching playlist info of playlist ID $playlistId',
+        await proc.process.exitCode);
   }
 }
