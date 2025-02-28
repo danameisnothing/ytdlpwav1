@@ -171,8 +171,10 @@ Future<void> downloadVideosLogic(
     late Stream lastRetStream;
     lastRetStream = resBroadcast.asyncMap(func);
 
+    final tmpFirst = await resBroadcast.first;
+
     // Assume we are not able to download in the preferred codec
-    if (await resBroadcast.first is ProcessNonZeroExitMessage) {
+    if (tmpFirst is ProcessNonZeroExitMessage) {
       logger.warning(
           'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
       isDownloadingPreferredFormat = false;
@@ -184,6 +186,9 @@ Future<void> downloadVideosLogic(
 
       lastRetStream = resBroadcast.asyncMap(func);
     }
+
+    // Dirty fix to capture first result (to prevent message dropout)
+    func(tmpFirst);
 
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
     // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
