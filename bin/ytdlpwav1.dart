@@ -143,9 +143,7 @@ Future<void> downloadVideosLogic(
 
     DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
 
-    // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
-    // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
-    final lastRetStream = resBroadcast.asyncMap((info) async {
+    Future<DownloadReturnStatus> func(info) async {
       if (info is CaptionDownloadedMessage) {
         captionFP.add(info.captionFilePath);
         logger.fine('Found ${info.captionFilePath} as caption from logic');
@@ -168,10 +166,13 @@ Future<void> downloadVideosLogic(
 
       await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
       return info;
-    }).asBroadcastStream();
+    }
+
+    late Stream lastRetStream;
+    lastRetStream = resBroadcast.asyncMap(func);
 
     // Assume we are not able to download in the preferred codec
-    if (await lastRetStream.first is ProcessNonZeroExitMessage) {
+    if (await resBroadcast.first is ProcessNonZeroExitMessage) {
       logger.warning(
           'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
       isDownloadingPreferredFormat = false;
@@ -180,7 +181,12 @@ Future<void> downloadVideosLogic(
               pref, pref.videoRegularCmd, videoData)
           .asBroadcastStream();
       ui.setUseAllStageTemplates(true);
+
+      lastRetStream = resBroadcast.asyncMap(func);
     }
+
+    // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
+    // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
 
     final lastRet = await lastRetStream.last;
 
