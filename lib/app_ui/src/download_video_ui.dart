@@ -149,7 +149,7 @@ final class DownloadVideoUI {
       // Handle us not having enough space to print the base message
       // https://github.com/dart-lang/sdk/issues/41717
       return (stdout.terminalColumns < strLen)
-          ? '${str.substring(0, (stdout.terminalColumns - 3).clamp(0, double.infinity as int))}...' // Prevents underflow
+          ? '${str.substring(0, (stdout.terminalColumns - 3).clamp(0, 0x7FFFFFFFFFFFFFFF))}...' // Prevents underflow
           : '$str${List.filled(stdout.terminalColumns - strLen, ' ').join()}';
     }).join('\n');
 
@@ -199,7 +199,8 @@ final class DownloadVideoUI {
     final templateStr =
         """Downloading : ${_getDownloadVideoMediaNameMapping(status, idxInVideoInfo)}${(_getDownloadVideoIsStillDownloading(status)) ? ' ${_getDownloadVideoMediaKindMapping(status)}' : ''}
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}${(_getDownloadVideoIsStillDownloading(status)) ? '      Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
+Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}
+${(_getDownloadVideoIsStillDownloading(status)) ? 'Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
 
     await _printUI(templateStr);
   }
@@ -259,14 +260,23 @@ Stage 5/$_maxStageUI ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStag
   }
 
   Future<void> printReencodeAndMergeFilesUI(
-      double percentageProg, String finalVidOut) async {
+      double percentageProg,
+      String finalVidOut,
+      int frameCurrent,
+      int frameTotal,
+      double fps,
+      String speed,
+      String bitrate,
+      String customETA) async {
+    // speed can be N/A in frame 0
     _pb.progress = _pb.progress.truncate() +
         map(percentageProg, 0, 100, (1 / _maxStageUI) * 5,
             (1 / _maxStageUI) * 6);
 
     final templateStr = """Re-encoding and merging final output to $finalVidOut
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
-Stage 6/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}""";
+Stage 6/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}
+Frame $frameCurrent of $frameTotal | Speed : $speed | FPS : $fps | Bitrate : $bitrate | ETA : $customETA""";
 
     await _printUI(templateStr);
   }

@@ -190,7 +190,7 @@ Future<void> downloadVideosLogic(
     }
 
     // Dirty fix to capture first result (to prevent message dropout)
-    func(tmpFirst);
+    await func(tmpFirst);
 
     // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
     // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
@@ -292,12 +292,24 @@ Future<void> downloadVideosLogic(
 
       final last = await ffReencodeAndMerge.asyncMap((info) async {
         if (info is ReencodeAndMergeProgress) {
+          final fps = double.parse(info.progressData['fps']);
+          final approxTotalFrames = int.parse((formerVideoData['streams']
+              as List<dynamic>)[0]['nb_read_packets']);
+          final frames = int.parse(info.progressData['frame']);
+
           ui.printReencodeAndMergeFilesUI(
-              (int.parse(info.progressData['frame']) /
-                      int.parse((formerVideoData['streams'] as List<dynamic>)[0]
-                          ['nb_read_packets'])) *
-                  100,
-              mergedFinalVideoFP); // *Assume* the video stream is in the first stream
+              (int.parse(info.progressData['frame']) / approxTotalFrames) * 100,
+              mergedFinalVideoFP,
+              frames,
+              approxTotalFrames,
+              fps,
+              (info.progressData['speed'] as String)
+                  .trim(), // Can be N/A in frame 0
+              (info.progressData['bitrate'] as String) // Can be N/A in frame 0
+                  .trim(),
+              (fps.sign == fps)
+                  ? 'N/A'
+                  : '${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
         }
 
         return info;
