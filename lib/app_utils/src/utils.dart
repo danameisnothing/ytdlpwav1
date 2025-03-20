@@ -50,7 +50,8 @@ String getFractNumberPartStr(num n) {
 
 Future<bool> hasProgramInstalled(String program) async {
   // TODO: tested only on Windows, test on other platforms too!
-  for (final path in Platform.environment['PATH']!.split(';')) {
+  for (final path in Platform.environment['PATH']!
+      .split((Platform.isWindows) ? ';' : ':')) {
     if (!await Directory(path).exists()) continue;
     for (final file in await Directory(path).list().toList()) {
       final fName = file.uri.pathSegments.last;

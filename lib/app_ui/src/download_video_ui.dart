@@ -147,8 +147,10 @@ final class DownloadVideoUI {
     final chunked = data.split('\n').map((str) {
       final strLen = stripAnsi(str).length;
       // Handle us not having enough space to print the base message
-      // TODO: handle too long string
-      return '$str${(stdout.terminalColumns < strLen) ? 'TODO: too long logic here' : List.filled(stdout.terminalColumns - strLen, ' ').join()}';
+      // https://github.com/dart-lang/sdk/issues/41717
+      return (stdout.terminalColumns < strLen)
+          ? '${str.substring(0, (stdout.terminalColumns - 3).clamp(0, double.infinity as int))}...' // Prevents underflow
+          : '$str${List.filled(stdout.terminalColumns - strLen, ' ').join()}';
     }).join('\n');
 
     // Joined it all to prevent cursor jerking around
@@ -168,7 +170,8 @@ final class DownloadVideoUI {
       final standalonePartProgStr =
           double.parse(progStr.trim().replaceFirst(RegExp(r'%'), ''));
 
-      late final int prog;
+      // TODO: figure out what was this used for
+      //late final int prog;
 
       // FIXME:
       switch (status) {
@@ -176,18 +179,18 @@ final class DownloadVideoUI {
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 0,
                   (1 / _maxStageUI) * 1);
-          prog = 1;
+          //prog = 1;
           break;
         case VideoDownloadingMessage() || VideoDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 1,
                   (1 / _maxStageUI) * 2);
-          prog = 2;
+        //prog = 2;
         case AudioDownloadingMessage() || AudioDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 2,
                   (1 / _maxStageUI) * 3);
-          prog = 3;
+        //prog = 3;
         default:
           break;
       }

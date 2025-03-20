@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:args/command_runner.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:logging/logging.dart';
 import 'package:cli_spin/cli_spin.dart';
@@ -115,6 +114,7 @@ Future<void> downloadVideosLogic(
   }
   // For checking the user-supplied path
   if (!await Directory(outDir).exists()) {
+    // TODO: create a confirmation prompt to create the folder?
     hardExit('The output directory does not exist');
   }
 
@@ -169,7 +169,8 @@ Future<void> downloadVideosLogic(
     }
 
     late Stream lastRetStream;
-    lastRetStream = resBroadcast.asyncMap(func);
+    lastRetStream =
+        resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
 
     final tmpFirst = await resBroadcast.first;
 
@@ -184,7 +185,8 @@ Future<void> downloadVideosLogic(
           .asBroadcastStream();
       ui.setUseAllStageTemplates(true);
 
-      lastRetStream = resBroadcast.asyncMap(func);
+      lastRetStream =
+          resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
     }
 
     // Dirty fix to capture first result (to prevent message dropout)
@@ -325,15 +327,22 @@ void main(List<String> args) async {
   // TODO: Add detection to livestreams on playlist, as that will show the underlying FFmpeg output, with seemingly none of the usual yt-dlp output regarding downloading
   // TODO: Provide other methods of auth (https://yt-dlp.memoryview.in/docs/advanced-features/authentication-and-cookies-in-yt-dlp), and maybe methods of checking if the cookie file is outdated, as it could lead to missing subtitles in a language (see https://www.youtube.com/watch?v=LuVAWbg4kns for example)
   final argParser = ArgParser()
+    ..addFlag('no_program_check',
+        help:
+            'Skips checking if you have installed FFmpeg, FFprobe, and yt-dlp. Useful if the program is falsely identifying that you do not have the programs installed',
+        negatable: false)
+    ..addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
+
+  argParser.addCommand('fetch')
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
     ..addOption('playlist_id',
-        abbr: 'p', help: 'The target YouTube playlist ID', mandatory: false)
+        abbr: 'p', help: 'The target YouTube playlist ID');
+  argParser.addCommand('download')
+    ..addOption('cookie_file',
+        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
     ..addOption('output_dir',
-        abbr: 'o',
-        help: 'The target output directory of downloaded videos',
-        mandatory: false)
-    ..addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
+        abbr: 'o', help: 'The target output directory of downloaded videos');
 
   late final ArgResults parsedArgs;
   try {
@@ -344,14 +353,9 @@ void main(List<String> args) async {
     exit(1);
   }
 
-  final cookieFile = parsedArgs.option('cookie_file');
-  final playlistId = parsedArgs.option('playlist_id');
-  final outDir = parsedArgs.option('output_dir');
+  if (parsedArgs.command == null) hardExit('No valid command specified');
 
-  final preferences = Preferences(
-      cookieFilePath: cookieFile,
-      playlistId: playlistId,
-      outputDirPath: outDir);
+  final preferences = Preferences();
 
   Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((rec) {
@@ -384,11 +388,6 @@ void main(List<String> args) async {
     exit(0);
   });
 
-  if (cookieFile == null) {
-    hardExit('"cookie_file" argument not specified or empty');
-  }
-  if (!await File(cookieFile).exists()) hardExit('Invalid cookie path given');
-
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
     final logFile = File(preferences.debugLogFileName);
@@ -400,31 +399,55 @@ void main(List<String> args) async {
     }
   }
 
-  if (!await hasProgramInstalled('yt-dlp')) {
-    hardExit(
-        'Unable to find the yt-dlp program. Verify that yt-dlp is mounted in PATH');
-  }
-  if (!await hasProgramInstalled('ffprobe')) {
-    hardExit(
-        'Unable to find the ffprobe command. Verify that ffprobe is mounted in PATH');
-  }
-  if (!await hasProgramInstalled('ffmpeg')) {
-    hardExit(
-        'Unable to find the ffmpeg command. Verify that ffmpeg is mounted in PATH');
+  if (!parsedArgs.flag('no_program_check')) {
+    if (!await hasProgramInstalled('yt-dlp')) {
+      hardExit(
+          'Unable to find the yt-dlp program. Verify that yt-dlp is mounted in PATH');
+    }
+    if (!await hasProgramInstalled('ffprobe')) {
+      hardExit(
+          'Unable to find the ffprobe command. Verify that ffprobe is mounted in PATH');
+    }
+    if (!await hasProgramInstalled('ffmpeg')) {
+      hardExit(
+          'Unable to find the ffmpeg command. Verify that ffmpeg is mounted in PATH');
+    }
   }
 
   // TODO: check for yt-dlp updates. Out-of-date versions oftentimes causes random HTTP 403 Forbidden errors
+  // TODO: allow user to not use a cookiefile
 
-  // We need playlist_id if the user is intending to choose this mode, but we don't explicitly need output_dir to be set
-  if ((playlistId ?? '').isNotEmpty) {
-    await fetchVideosLogic(preferences, cookieFile, playlistId!);
-    exit(0);
-  } else if (outDir != null) {
-    await downloadVideosLogic(preferences, cookieFile, outDir);
-    exit(0);
+  switch (parsedArgs.command!.name) {
+    case 'fetch':
+      final cookieFile = parsedArgs.command!.option('cookie_file');
+      final playlistId = parsedArgs.command!.option('playlist_id');
+      if (!await File((cookieFile ?? '')).exists()) {
+        hardExit('Invalid cookie path given');
+      }
+      if ((playlistId ?? '').isEmpty) {
+        hardExit('Invalid playlist ID given');
+      }
+
+      preferences
+        ..cookieFilePath = cookieFile
+        ..playlistId = playlistId;
+
+      await fetchVideosLogic(preferences, cookieFile!, playlistId!);
+      exit(0);
+    case 'download':
+      final cookieFile = parsedArgs.command!.option('cookie_file');
+      final outDir = parsedArgs.command!.option('output_dir');
+      if (!await File((cookieFile ?? '')).exists()) {
+        hardExit('Invalid cookie path given');
+      }
+
+      preferences
+        ..cookieFilePath = cookieFile
+        ..outputDirPath = outDir;
+
+      await downloadVideosLogic(preferences, cookieFile!, outDir);
+      exit(0);
   }
-
-  hardExit('Invalid mode of operation');
 
   /*print(cmdSplitArgs.split(
       'yt-dlp --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --sub-lang "en.*" --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt" "https://www.youtube.com/watch?v=TXgYLmN6m1U"'));*/
