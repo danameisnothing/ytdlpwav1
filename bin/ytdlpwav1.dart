@@ -128,6 +128,12 @@ Future<void> downloadVideosLogic(
   final ui = DownloadVideoUI(videoInfos);
 
   for (final videoData in videoInfos) {
+    if (videoData.hasDownloadedSuccessfully) {
+      logger.info(
+          'Video named ${videoData.title} has already been downloaded successfully, skipping');
+      continue;
+    }
+
     // Exclusively for deletion in the case the process exited with a non-zero code
     final captionFP = <String>[];
     // This should only be reassigned once
@@ -229,7 +235,6 @@ Future<void> downloadVideosLogic(
         continue;
       //break;
       case ProgressStateStayedUninitializedMessage():
-        // TODO: save progress too!
         logger.warning(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, continuing...');
         await cleanupGeneratedFiles(
@@ -239,7 +244,6 @@ Future<void> downloadVideosLogic(
         continue;
     }
 
-    // TODO: save progress on every loop!
     final ffThumbExtractedPath =
         '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
     final ffExtract =
@@ -309,7 +313,7 @@ Future<void> downloadVideosLogic(
                   .trim(),
               (fps.sign == fps)
                   ? 'N/A'
-                  : '${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
+                  : '~${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
         }
 
         return info;
@@ -332,6 +336,12 @@ Future<void> downloadVideosLogic(
         captionFPs: captionFP,
         thumbFP: ffThumbExtractedPath,
         endVideoFP: endVideoPath!);
+
+    videoInfos.firstWhere((e) => e == videoData).hasDownloadedSuccessfully =
+        true;
+    await videoDataFile.writeAsString(
+        jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()}),
+        flush: true);
   }
 }
 
