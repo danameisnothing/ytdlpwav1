@@ -38,15 +38,226 @@ Future<void> onDownloadFailureBeforeContinuing(
     Preferences pref, List<VideoInPlaylist> videos, VideoInPlaylist vid) async {
   final videoDataFile = File(pref.videoDataFileName);
 
-  print('before $videos');
+  logger.fine('before $videos');
   videos.firstWhere((e) => e == vid).hasDownloadedSuccessfully = true;
-  print('after $videos');
+  logger.fine('after $videos');
 
   final convertedRes =
       jsonEncode({'res': videos.map((e) => e.toJson()).toList()});
 
   await videoDataFile.writeAsString(convertedRes,
       flush: true, mode: FileMode.write);
+}
+
+Future<bool> doDownloadHandling(
+    final DownloadVideoUI ui,
+    Preferences pref,
+    final VideoInPlaylist videoData,
+    final List<VideoInPlaylist> videoInfos,
+    final int idxInVideoInfo,
+    final bool isSingle) async {
+  // Exclusively for deletion in the case the process exited with a non-zero code
+  final captionFP = <String>[];
+  // This should only be reassigned once
+  String? endVideoPath;
+
+  Stream<DownloadReturnStatus> resBroadcast;
+  bool isDownloadingPreferredFormat = true;
+
+  resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+          pref, pref.videoPreferredCmd, videoData)
+      .asBroadcastStream();
+  ui.setUseAllStageTemplates(false);
+
+  DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
+
+  Future<DownloadReturnStatus> func(info) async {
+    if (info is CaptionDownloadedMessage) {
+      captionFP.add(info.captionFilePath);
+      logger.fine('Found ${info.captionFilePath} as caption from logic');
+    } else if (info is VideoAudioMergedMessage) {
+      endVideoPath = info.finalVideoFilePath;
+      logger.fine('Found $endVideoPath as merged video and audio from logic');
+    }
+
+    switch (info) {
+      case CaptionDownloadingMessage() || CaptionDownloadedMessage():
+        stage = DownloadUIStageTemplate.stageDownloadingCaptions;
+        break;
+      case VideoDownloadingMessage() || VideoDownloadedMessage():
+        stage = DownloadUIStageTemplate.stageDownloadingVideo;
+        break;
+      case AudioDownloadingMessage() || AudioDownloadedMessage():
+        stage = DownloadUIStageTemplate.stageDownloadingAudio;
+        break;
+    }
+
+    await ui.printDownloadVideoUI(stage, info, idxInVideoInfo);
+    return info;
+  }
+
+  late Stream lastRetStream;
+  lastRetStream = resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
+
+  final tmpFirst = await resBroadcast.first;
+
+  // Assume we are not able to download in the preferred codec
+  if (tmpFirst is ProcessNonZeroExitMessage) {
+    logger.warning(
+        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
+    isDownloadingPreferredFormat = false;
+
+    resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
+            pref, pref.videoRegularCmd, videoData)
+        .asBroadcastStream();
+    ui.setUseAllStageTemplates(true);
+
+    lastRetStream =
+        resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
+  }
+
+  // Dirty fix to capture first result (to prevent message dropout)
+  await func(tmpFirst);
+
+  // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
+  // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
+
+  final lastRet = await lastRetStream.last;
+
+  logger.fine('End result received : $captionFP');
+
+  // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
+  // FIXME: not robust enough
+  if (lastRet is! SuccessMessage) {
+    for (final path in captionFP) {
+      await File(path).delete();
+      logger
+          .info('Deleted subtitle file on path $path'); // FIXME: change to fine
+    }
+    if (endVideoPath != null) {
+      await File(endVideoPath!).delete();
+      logger.info(
+          'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+    }
+  }
+
+  // This block is for handling any other error that is not related to the video failed to be downloaded in our target codec
+  switch (lastRet) {
+    case ProcessNonZeroExitMessage():
+      // TODO: More robust error handling!
+      // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
+      logger.warning(
+          'Video named ${videoData.title} failed to be downloaded${(!isSingle) ? ', continuing' : ''}');
+      // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP, endVideoFP: endVideoPath);
+      ui.onDownloadFailure();
+      await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
+      return false;
+    //break;
+    case ProgressStateStayedUninitializedMessage():
+      logger.warning(
+          'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program${(!isSingle) ? ', continuing...' : ''}');
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP, endVideoFP: endVideoPath);
+      ui.onDownloadFailure();
+      await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
+      return false;
+  }
+
+  final ffThumbExtractedPath =
+      '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
+  final ffExtract =
+      extractThumbnailFromVideo(pref, endVideoPath!, ffThumbExtractedPath);
+  await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
+
+  final ret = await ffExtract.last;
+  if (ret!.eCode != 0) {
+    await cleanupGeneratedFiles(
+        captionFPs: captionFP,
+        thumbFP: ffThumbExtractedPath,
+        endVideoFP: endVideoPath!);
+    // TODO: more verbose error message
+    // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
+    hardExit(
+        'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
+  }
+
+  await ui.printExtractThumbnailUI(FFmpegExtractThumb.completed, endVideoPath!);
+
+  final mergedFinalVideoFP =
+      '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
+
+  if (isDownloadingPreferredFormat) {
+    final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
+        ffThumbExtractedPath, mergedFinalVideoFP);
+    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
+
+    final ret2 = await ffMerge.last;
+    if (ret2!.eCode != 0) {
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP,
+          thumbFP: ffThumbExtractedPath,
+          endVideoFP: endVideoPath!);
+      // TODO: more verbose error message
+      // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
+      hardExit(
+          'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
+    }
+    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
+  } else {
+    ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
+    final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
+    ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
+
+    // TODO: proper logic
+    final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
+        captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
+
+    final last = await ffReencodeAndMerge.asyncMap((info) async {
+      if (info is ReencodeAndMergeProgress) {
+        final fps = double.parse(info.progressData['fps']);
+        final approxTotalFrames = int.parse((formerVideoData['streams']
+            as List<dynamic>)[0]['nb_read_packets']);
+        final frames = int.parse(info.progressData['frame']);
+
+        ui.printReencodeAndMergeFilesUI(
+            (int.parse(info.progressData['frame']) / approxTotalFrames) * 100,
+            mergedFinalVideoFP,
+            frames,
+            approxTotalFrames,
+            fps,
+            (info.progressData['speed'] as String)
+                .trim(), // Can be N/A in frame 0
+            (info.progressData['bitrate'] as String) // Can be N/A in frame 0
+                .trim(),
+            (fps.sign == fps)
+                ? 'N/A'
+                : '~${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
+      }
+
+      return info;
+    }).last;
+
+    if (last is ReencodeAndMergeProcessNonZeroExitCode) {
+      // TODO: More robust error handling!
+      logger.warning(
+          'An error occured while re-encoding video ${videoData.title} to AV1 and merging it${(!isSingle) ? ', continuing' : ''}');
+      // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
+      await cleanupGeneratedFiles(
+          captionFPs: captionFP, endVideoFP: endVideoPath);
+      ui.onDownloadFailure();
+      await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
+      return false;
+    }
+  }
+
+  await cleanupGeneratedFiles(
+      captionFPs: captionFP,
+      thumbFP: ffThumbExtractedPath,
+      endVideoFP: endVideoPath!);
+
+  return true;
 }
 
 // TODO: split across multiple files
@@ -134,214 +345,48 @@ Future<void> downloadVideosLogic(
       continue;
     }
 
-    // Exclusively for deletion in the case the process exited with a non-zero code
-    final captionFP = <String>[];
-    // This should only be reassigned once
-    String? endVideoPath;
+    final ret = await doDownloadHandling(
+        ui, pref, videoData, videoInfos, videoInfos.indexOf(videoData), false);
 
-    Stream<DownloadReturnStatus> resBroadcast;
-    bool isDownloadingPreferredFormat = true;
-
-    resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-            pref, pref.videoPreferredCmd, videoData)
-        .asBroadcastStream();
-    ui.setUseAllStageTemplates(false);
-
-    DownloadUIStageTemplate stage = DownloadUIStageTemplate.stageUninitialized;
-
-    Future<DownloadReturnStatus> func(info) async {
-      if (info is CaptionDownloadedMessage) {
-        captionFP.add(info.captionFilePath);
-        logger.fine('Found ${info.captionFilePath} as caption from logic');
-      } else if (info is VideoAudioMergedMessage) {
-        endVideoPath = info.finalVideoFilePath;
-        logger.fine('Found $endVideoPath as merged video and audio from logic');
-      }
-
-      switch (info) {
-        case CaptionDownloadingMessage() || CaptionDownloadedMessage():
-          stage = DownloadUIStageTemplate.stageDownloadingCaptions;
-          break;
-        case VideoDownloadingMessage() || VideoDownloadedMessage():
-          stage = DownloadUIStageTemplate.stageDownloadingVideo;
-          break;
-        case AudioDownloadingMessage() || AudioDownloadedMessage():
-          stage = DownloadUIStageTemplate.stageDownloadingAudio;
-          break;
-      }
-
-      await ui.printDownloadVideoUI(stage, info, videoInfos.indexOf(videoData));
-      return info;
+    if (!ret) {
+      // doDownloadHandling already logs the error message at this point, so just continue
+      continue;
     }
-
-    late Stream lastRetStream;
-    lastRetStream =
-        resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
-
-    final tmpFirst = await resBroadcast.first;
-
-    // Assume we are not able to download in the preferred codec
-    if (tmpFirst is ProcessNonZeroExitMessage) {
-      logger.warning(
-          'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
-      isDownloadingPreferredFormat = false;
-
-      resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-              pref, pref.videoRegularCmd, videoData)
-          .asBroadcastStream();
-      ui.setUseAllStageTemplates(true);
-
-      lastRetStream =
-          resBroadcast.asyncMap(func).asBroadcastStream(); // What? How?
-    }
-
-    // Dirty fix to capture first result (to prevent message dropout)
-    await func(tmpFirst);
-
-    // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
-    // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
-
-    final lastRet = await lastRetStream.last;
-
-    logger.fine('End result received : $captionFP');
-
-    // The command can complete without setting subtitleFilePaths and/or endVideoPath to anything useful (e.g. if the file is already downloaded) (I think)
-    // FIXME: not robust enough
-    if (lastRet is! SuccessMessage) {
-      for (final path in captionFP) {
-        await File(path).delete();
-        logger.info(
-            'Deleted subtitle file on path $path'); // FIXME: change to fine
-      }
-      if (endVideoPath != null) {
-        await File(endVideoPath!).delete();
-        logger.info(
-            'Deleted video file on path $endVideoPath'); // FIXME: change to fine
-      }
-    }
-
-    // This block is for handling any other error that is not related to the video failed to be downloaded in our target codec
-    switch (lastRet) {
-      case ProcessNonZeroExitMessage():
-        // TODO: More robust error handling!
-        // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
-        logger.warning(
-            'Video named ${videoData.title} failed to be downloaded, continuing');
-        // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
-        await cleanupGeneratedFiles(
-            captionFPs: captionFP, endVideoFP: endVideoPath);
-        ui.onDownloadFailure();
-        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-        continue;
-      //break;
-      case ProgressStateStayedUninitializedMessage():
-        logger.warning(
-            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, continuing...');
-        await cleanupGeneratedFiles(
-            captionFPs: captionFP, endVideoFP: endVideoPath);
-        ui.onDownloadFailure();
-        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-        continue;
-    }
-
-    final ffThumbExtractedPath =
-        '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
-    final ffExtract =
-        extractThumbnailFromVideo(pref, endVideoPath!, ffThumbExtractedPath);
-    await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
-
-    final ret = await ffExtract.last;
-    if (ret!.eCode != 0) {
-      await cleanupGeneratedFiles(
-          captionFPs: captionFP,
-          thumbFP: ffThumbExtractedPath,
-          endVideoFP: endVideoPath!);
-      // TODO: more verbose error message
-      // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
-      hardExit(
-          'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
-    }
-
-    await ui.printExtractThumbnailUI(
-        FFmpegExtractThumb.completed, endVideoPath!);
-
-    final mergedFinalVideoFP =
-        '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
-
-    if (isDownloadingPreferredFormat) {
-      final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
-          ffThumbExtractedPath, mergedFinalVideoFP);
-      ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
-
-      final ret2 = await ffMerge.last;
-      if (ret2!.eCode != 0) {
-        await cleanupGeneratedFiles(
-            captionFPs: captionFP,
-            thumbFP: ffThumbExtractedPath,
-            endVideoFP: endVideoPath!);
-        // TODO: more verbose error message
-        // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
-        hardExit(
-            'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
-      }
-      ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
-    } else {
-      ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
-      final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
-      ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
-
-      // TODO: proper logic
-      final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
-          captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
-
-      final last = await ffReencodeAndMerge.asyncMap((info) async {
-        if (info is ReencodeAndMergeProgress) {
-          final fps = double.parse(info.progressData['fps']);
-          final approxTotalFrames = int.parse((formerVideoData['streams']
-              as List<dynamic>)[0]['nb_read_packets']);
-          final frames = int.parse(info.progressData['frame']);
-
-          ui.printReencodeAndMergeFilesUI(
-              (int.parse(info.progressData['frame']) / approxTotalFrames) * 100,
-              mergedFinalVideoFP,
-              frames,
-              approxTotalFrames,
-              fps,
-              (info.progressData['speed'] as String)
-                  .trim(), // Can be N/A in frame 0
-              (info.progressData['bitrate'] as String) // Can be N/A in frame 0
-                  .trim(),
-              (fps.sign == fps)
-                  ? 'N/A'
-                  : '~${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
-        }
-
-        return info;
-      }).last;
-
-      if (last is ReencodeAndMergeProcessNonZeroExitCode) {
-        // TODO: More robust error handling!
-        logger.warning(
-            'An error occured while re-encoding video ${videoData.title} to AV1 and merging it, continuing');
-        // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
-        await cleanupGeneratedFiles(
-            captionFPs: captionFP, endVideoFP: endVideoPath);
-        ui.onDownloadFailure();
-        await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-        continue;
-      }
-    }
-
-    await cleanupGeneratedFiles(
-        captionFPs: captionFP,
-        thumbFP: ffThumbExtractedPath,
-        endVideoFP: endVideoPath!);
 
     videoInfos.firstWhere((e) => e == videoData).hasDownloadedSuccessfully =
         true;
     await videoDataFile.writeAsString(
         jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()}),
         flush: true);
+  }
+}
+
+Future<void> downloadSingleVideosLogic(Preferences pref, String cookieFile,
+    String? passedOutDir, final String id) async {
+  final outDir = passedOutDir ?? Directory.current.path;
+  // Exclusively for logging if you are wondering why
+  if (passedOutDir != outDir) {
+    logger.info('Using default path of current directory at $outDir');
+  }
+  // For checking the user-supplied path
+  if (!await Directory(outDir).exists()) {
+    // TODO: create a confirmation prompt to create the folder?
+    hardExit('The output directory does not exist');
+  }
+
+  final decoyValue = <VideoInPlaylist>[
+    VideoInPlaylist('', id, '', '', DateTime.now(),
+        false) // FIXME: Placeholder values, quick hack
+  ]; // FIXME: Placeholder values, quick hack
+
+  final ui = DownloadVideoUI(decoyValue);
+
+  final ret =
+      await doDownloadHandling(ui, pref, decoyValue.first, decoyValue, 0, true);
+
+  if (!ret) {
+    // doDownloadHandling already logs the error message at this point, so just continue
+    return;
   }
 }
 
@@ -359,12 +404,19 @@ void main(List<String> args) async {
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
     ..addOption('playlist_id',
-        abbr: 'p', help: 'The target YouTube playlist ID');
+        abbr: 'p', help: 'The target YouTube playlist ID', mandatory: true);
   argParser.addCommand('download')
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
     ..addOption('output_dir',
         abbr: 'o', help: 'The target output directory of downloaded videos');
+  argParser.addCommand('download_single')
+    ..addOption('cookie_file',
+        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
+    ..addOption('output_dir',
+        abbr: 'o', help: 'The target output directory of downloaded videos')
+    ..addOption('id',
+        abbr: 'i', help: 'The video ID to download', mandatory: true);
 
   late final ArgResults parsedArgs;
   try {
@@ -442,12 +494,9 @@ void main(List<String> args) async {
   switch (parsedArgs.command!.name) {
     case 'fetch':
       final cookieFile = parsedArgs.command!.option('cookie_file');
-      final playlistId = parsedArgs.command!.option('playlist_id');
+      final playlistId = parsedArgs.command!.option('playlist_id')!;
       if (!await File((cookieFile ?? '')).exists()) {
         hardExit('Invalid cookie path given');
-      }
-      if ((playlistId ?? '').isEmpty) {
-        hardExit('Invalid playlist ID given');
       }
 
       preferences
@@ -468,6 +517,21 @@ void main(List<String> args) async {
         ..outputDirPath = outDir;
 
       await downloadVideosLogic(preferences, cookieFile!, outDir);
+      exit(0);
+    case 'download_single':
+      final cookieFile = parsedArgs.command!.option('cookie_file');
+      final outDir = parsedArgs.command!.option('output_dir');
+      final id = parsedArgs.command!.option('id')!;
+      if (!await File((cookieFile ?? '')).exists()) {
+        hardExit('Invalid cookie path given');
+      }
+
+      preferences
+        ..cookieFilePath = cookieFile
+        ..outputDirPath = outDir;
+
+      // TODO:
+      await downloadSingleVideosLogic(preferences, cookieFile!, outDir, id);
       exit(0);
   }
 

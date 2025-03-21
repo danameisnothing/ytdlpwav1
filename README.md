@@ -7,12 +7,12 @@ ytdlpwav1 is a program to download videos from a YouTube playlist, and outputtin
 This program relies on FFmpeg and yt-dlp being installed and added to PATH.
 
 ## Requirements
-* FFmpeg (TODO: CHECK WHAT MINIMUM VERSION!)
+* FFmpeg and FFprobe
 * yt-dlp (The latest version is **heavily recommended**, as an out-of-date version can cause issues regarding downloads, either to fetch video information, or downloading the actual video)
 
 ## Usage?
 ### Downloading from a Playlist
-To download a collection of videos from a YouTube playlist, TODO
+To download a collection of videos from a YouTube playlist, run this command : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID"`
 
 ## Configuration
 *For now, ytdlpwav1 outputs a video with a target resolution of max 1080p. You can not change this setting just yet. This is planned to be configurable in the future.*
