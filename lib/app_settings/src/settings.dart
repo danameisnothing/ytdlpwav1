@@ -24,15 +24,18 @@ final class Preferences {
       'yt-dlp --verbose --paths "<output_dir>" --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --convert-thumbnail png --embed-metadata --sub-lang "en.*" --progress-template {\'percentage\':\'%(progress._percent_str)s\',\'bytes_downloaded\':\'%(progress._downloaded_bytes_str)s\',\'bytes_total\':\'%(progress._total_bytes_str)s\',\'download_speed\':\'%(progress._speed_str)s\',\'ETA\':\'%(progress._eta_str)s\'} --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "<cookie_file>" "https://www.youtube.com/watch?v=<video_id>"';
   final ffmpegExtractThumbnailCmd =
       'ffmpeg -hide_banner -i "<video_input>" -map 0:2 -update 1 -frames:v 1 <thumb_out>';
-  final ffmpegCombineFinalVideo =
+  final ffmpegCombineFinalVideoCmd =
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -map 0:0 -map 0:1 -c:v copy -c:a copy <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
-  final ffmpegReencodeAndCombine =
+  final ffmpegReencodeAndCombineCmd =
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
-  final ffprobeFetchVideoInfo =
+  final ffprobeFetchVideoInfoCmd =
       'ffprobe -v quiet -show_format -show_streams -count_packets -print_format json <video_input>';
+  final ytdlpCheckVersionCmd = 'yt-dlp --version';
 
   final debugLogFileName = 'ytdlpwav1_debug_log.txt';
   final videoDataFileName = 'ytdlpwav1_video_data.json';
+  final ytdlpVersionCheckUri =
+      Uri.parse('https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest');
 
   Preferences(/*{this.cookieFilePath, this.playlistId, this.outputDirPath}*/);
 }

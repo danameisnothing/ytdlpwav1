@@ -6,6 +6,7 @@ import 'package:args/args.dart';
 import 'package:chalkdart/chalk.dart';
 import 'package:logging/logging.dart';
 import 'package:cli_spin/cli_spin.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 import 'package:ytdlpwav1/app_settings/src/settings.dart';
@@ -131,13 +132,11 @@ Future<bool> doDownloadHandling(
   if (lastRet is! SuccessMessage) {
     for (final path in captionFP) {
       await File(path).delete();
-      logger
-          .info('Deleted subtitle file on path $path'); // FIXME: change to fine
+      logger.fine('Deleted subtitle file on path $path');
     }
     if (endVideoPath != null) {
       await File(endVideoPath!).delete();
-      logger.info(
-          'Deleted video file on path $endVideoPath'); // FIXME: change to fine
+      logger.fine('Deleted video file on path $endVideoPath');
     }
   }
 
@@ -375,8 +374,7 @@ Future<void> downloadSingleVideosLogic(Preferences pref, String cookieFile,
   }
 
   final decoyValue = <VideoInPlaylist>[
-    VideoInPlaylist('', id, '', '', DateTime.now(),
-        false) // FIXME: Placeholder values, quick hack
+    VideoInPlaylist('', id, '', '', DateTime.now(), false)
   ]; // FIXME: Placeholder values, quick hack
 
   final ui = DownloadVideoUI(decoyValue);
@@ -397,6 +395,10 @@ void main(List<String> args) async {
     ..addFlag('no_program_check',
         help:
             'Skips checking if you have installed FFmpeg, FFprobe, and yt-dlp. Useful if the program is falsely identifying that you do not have the programs installed',
+        negatable: false)
+    ..addFlag('no_update_check',
+        help:
+            'Skips checking for available updates for yt-dlp. Useful if the program consistently fails to check for updates, or is falsely identifying an out-of-date version',
         negatable: false)
     ..addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
 
@@ -476,19 +478,54 @@ void main(List<String> args) async {
   if (!parsedArgs.flag('no_program_check')) {
     if (!await hasProgramInstalled('yt-dlp')) {
       hardExit(
-          'Unable to find the yt-dlp program. Verify that yt-dlp is mounted in PATH');
+          'Unable to find yt-dlp. Verify that yt-dlp is mounted in PATH, or pass in --no_program_check to bypass this check');
     }
     if (!await hasProgramInstalled('ffprobe')) {
       hardExit(
-          'Unable to find the ffprobe command. Verify that ffprobe is mounted in PATH');
+          'Unable to find ffprobe. Verify that ffprobe is mounted in PATH, or pass in --no_program_check to bypass this check');
     }
     if (!await hasProgramInstalled('ffmpeg')) {
       hardExit(
-          'Unable to find the ffmpeg command. Verify that ffmpeg is mounted in PATH');
+          'Unable to find ffmpeg. Verify that ffmpeg is mounted in PATH, or pass in --no_program_check to bypass this check');
     }
   }
 
-  // TODO: check for yt-dlp updates. Out-of-date versions oftentimes causes random HTTP 403 Forbidden errors
+  if (!parsedArgs.flag('no_program_check')) {
+    final updtRes = await http.get(preferences.ytdlpVersionCheckUri);
+    if (updtRes.statusCode != 200) {
+      final rlRemaining = updtRes.headers['X-RateLimit-Remaining'] as int;
+      if (rlRemaining == 0) {
+        final rlReset = DateTime.fromMillisecondsSinceEpoch(rlRemaining * 1000);
+        logger.fine(
+            'Failed to check for yt-dlp updates. Headers : ${updtRes.headers}');
+        logger.warning(
+            'Failed to check for yt-dlp updates. Rate limit exceeded. Please wait until ${rlReset.hour}:${rlReset.minute} and try again, or pass the --no_update_check flag to bypass this check. Continuing without checking for updates');
+      } else {
+        logger.fine(
+            'Failed to check for yt-dlp updates. Status code : ${updtRes.statusCode}');
+        logger.warning(
+            'Failed to check for yt-dlp updates. You may not be connected to the Internet. Pass in --no_update_check to bypass this check. Continuing without checking for updates');
+      }
+    } else {
+      final tagNameLatest = jsonDecode(updtRes.body)['tag_name'] as String;
+      final tagNameCurrent = String.fromCharCodes(
+          await (await ProcessRunner.spawn(
+                  name: 'yt-dlp', argument: preferences.ytdlpCheckVersionCmd))
+              .stdout
+              .last);
+      final isUpToDate = List.generate(3, (int i) => i).every((i) =>
+          int.parse(tagNameCurrent.split('.').elementAt(i)) >=
+          int.parse(tagNameLatest.split('.').elementAt(i)));
+
+      if (!isUpToDate) {
+        logger.fine(
+            'yt-dlp is currently not up-to-date. Current version detected : $tagNameCurrent, Latest version fetched : $tagNameLatest');
+        logger.warning(
+            'yt-dlp is currently not up-to-date, yt-dlp may fail to download some videos. Consider updating yt-dlp for best compatibility');
+      }
+    }
+  }
+
   // TODO: allow user to not use a cookiefile
 
   switch (parsedArgs.command!.name) {
@@ -503,7 +540,7 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..playlistId = playlistId;
 
-      await fetchVideosLogic(preferences, cookieFile!, playlistId!);
+      await fetchVideosLogic(preferences, cookieFile!, playlistId);
       exit(0);
     case 'download':
       final cookieFile = parsedArgs.command!.option('cookie_file');
@@ -530,7 +567,6 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..outputDirPath = outDir;
 
-      // TODO:
       await downloadSingleVideosLogic(preferences, cookieFile!, outDir, id);
       exit(0);
   }

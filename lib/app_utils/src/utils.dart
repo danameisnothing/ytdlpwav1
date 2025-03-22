@@ -11,12 +11,13 @@ double map(num value, num istart, num istop, num ostart, num ostop) {
   return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
 }
 
-Never hardExit(String msg) {
+/// Exits the program with an abnormal exit code, with a final [msg] beforehand
+Never hardExit(String msg, [int eCode = 1]) {
   logger.severe(msg);
-  exit(1);
+  exit(eCode);
 }
 
-Map<String, dynamic>? decodeJSONOrFail(String str) {
+Map<String, dynamic>? decodeJSONOrNull(String str) {
   try {
     return jsonDecode(str);
   } catch (e) {
@@ -38,6 +39,12 @@ Map<String, dynamic>? decodeJSONOrFail(String str) {
   return (stdout: stdoutBroadcast, stderr: stderrBroadcast);
 }
 
+/// Returns only the fractional part of [n], without the period as a [String]
+///
+/// Example :
+/// ```dart
+/// getFractNumberPartStr(6.2831) == '2831'
+/// ```
 String getFractNumberPartStr(num n) {
   final subFract =
       n.toString().replaceFirst(RegExp(n.truncate().toString()), '');
@@ -48,8 +55,8 @@ String getFractNumberPartStr(num n) {
   return subFract.substring(1);
 }
 
+// TODO: doc!
 Future<bool> hasProgramInstalled(String program) async {
-  // TODO: tested only on Windows, test on other platforms too!
   for (final path in Platform.environment['PATH']!
       .split((Platform.isWindows) ? ';' : ':')) {
     if (!await Directory(path).exists()) continue;
@@ -138,6 +145,7 @@ sealed class ProcessRunner {
           RegExp(replacement.key.template), replacement.value);
     }
 
+    // FIXME: WTF? this is confusing.
     final args = cmd_split_args
         .split(argument)
         .map((arg) => arg.replaceAll(RegExp('\''), '"'))

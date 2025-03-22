@@ -170,27 +170,21 @@ final class DownloadVideoUI {
       final standalonePartProgStr =
           double.parse(progStr.trim().replaceFirst(RegExp(r'%'), ''));
 
-      // TODO: figure out what was this used for
-      //late final int prog;
-
       // FIXME:
       switch (status) {
         case CaptionDownloadingMessage() || CaptionDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 0,
                   (1 / _maxStageUI) * 1);
-          //prog = 1;
           break;
         case VideoDownloadingMessage() || VideoDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 1,
                   (1 / _maxStageUI) * 2);
-        //prog = 2;
         case AudioDownloadingMessage() || AudioDownloadedMessage():
           _pb.progress = _pb.progress.truncate() +
               map(standalonePartProgStr, 0, 100, (1 / _maxStageUI) * 2,
                   (1 / _maxStageUI) * 3);
-        //prog = 3;
         default:
           break;
       }

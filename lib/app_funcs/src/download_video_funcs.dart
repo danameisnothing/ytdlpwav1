@@ -222,7 +222,7 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
         }
 
         // FIXME: The section where we send the captionDownloaded or captionDownloading is problematic, it is dropping stuff for some reason
-        final progressOut = decodeJSONOrFail(output);
+        final progressOut = decodeJSONOrNull(output);
         //logger.warning('Raw ${String.fromCharCodes(tmpO)}');
         if (progressOut != null &&
             state != DownloadProgressState.uninitialized) {
@@ -306,7 +306,7 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
     List<String> captionFP, String thumbFP, String targetOutFP) async* {
   final proc = await ProcessRunner.spawn(
       name: 'ffmpeg',
-      argument: pref.ffmpegCombineFinalVideo,
+      argument: pref.ffmpegCombineFinalVideoCmd,
       replacements: {
         TemplateReplacements.videoInput: baseVideoFP,
         TemplateReplacements.captionsInputFlags: List<String>.generate(
@@ -337,7 +337,7 @@ Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
     String targetOutFP) async* {
   final proc = await ProcessRunner.spawn(
       name: 'ffmpeg',
-      argument: pref.ffmpegReencodeAndCombine,
+      argument: pref.ffmpegReencodeAndCombineCmd,
       replacements: {
         TemplateReplacements.videoInput: baseVideoFP,
         TemplateReplacements.captionsInputFlags: List<String>.generate(
@@ -385,7 +385,7 @@ Future<Map<String, dynamic>> fetchVideoInfo(
     Preferences pref, String videoPath) async {
   final proc = await ProcessRunner.spawn(
       name: 'ffprobe',
-      argument: pref.ffprobeFetchVideoInfo,
+      argument: pref.ffprobeFetchVideoInfoCmd,
       replacements: {TemplateReplacements.videoInput: videoPath});
 
   final buff = StringBuffer();
