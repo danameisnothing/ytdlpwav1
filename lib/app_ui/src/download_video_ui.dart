@@ -7,17 +7,7 @@ import 'package:ytdlpwav1/app_funcs/app_funcs.dart';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/simpleprogressbar/simpleprogressbar.dart';
 
-// TODO: ENUM DOC!
-// FIXME: necessary with these enums having the same values?
-enum FFmpegExtractThumb { started, completed }
-
-// TODO: ENUM DOC!
-// FIXME: necessary with these enums having the same values?
-enum FFmpegMergeFilesState { started, completed }
-
-// TODO: ENUM DOC!
-// FIXME: necessary with these enums having the same values?
-enum FFprobeFetchVideoDataState { started, completed }
+enum GenericProgressState { started, completed }
 
 enum DownloadUIStageTemplate {
   stageUninitialized(uiStageMapping: 'Uninitialized'),
@@ -40,6 +30,7 @@ final class DownloadVideoUI {
   final List<VideoInPlaylist> _videos;
 
   int _maxStageUI = -1;
+  String lastMsg = '';
 
   DownloadVideoUI(this._videos)
       : _pb = ProgressBar(
@@ -196,13 +187,15 @@ final class DownloadVideoUI {
 Stage ${stage.index}/$_maxStageUI ${stage.uiStageMapping}
 ${(_getDownloadVideoIsStillDownloading(status)) ? 'Downloaded : ${_getDownloadVideoBytesMapping(prog, 'bytes_downloaded')}/${_getDownloadVideoBytesMapping(prog, 'bytes_total')} | Speed : ${_getDownloadVideoBytesMapping(prog, 'download_speed')} | ETA : ${_getDownloadVideoBytesMapping(prog, 'ETA')}' : ''}""";
 
+    lastMsg = templateStr;
+
     await _printUI(templateStr);
   }
 
   Future<void> printExtractThumbnailUI(
-      FFmpegExtractThumb state, String videoTarget) async {
+      GenericProgressState ffExtractThumbState, String videoTarget) async {
     bool completed = false;
-    if (state == FFmpegExtractThumb.completed) {
+    if (ffExtractThumbState == GenericProgressState.completed) {
       completed = true;
     }
 
@@ -214,13 +207,15 @@ ${(_getDownloadVideoIsStillDownloading(status)) ? 'Downloaded : ${_getDownloadVi
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
 Stage 4/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.uiStageMapping}""";
 
+    lastMsg = templateStr;
+
     await _printUI(templateStr);
   }
 
   Future<void> printMergeFilesUI(
-      FFmpegMergeFilesState state, String finalVidOut) async {
+      GenericProgressState ffMergeFilesState, String finalVidOut) async {
     bool completed = false;
-    if (state == FFmpegMergeFilesState.completed) {
+    if (ffMergeFilesState == GenericProgressState.completed) {
       completed = true;
     }
 
@@ -232,13 +227,15 @@ Stage 4/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegExtractingThumbnail.ui
 [${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
 Stage 5/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapping}""";
 
+    lastMsg = templateStr;
+
     await _printUI(templateStr);
   }
 
   Future<void> printFetchingVideoDataUI(
-      FFprobeFetchVideoDataState state) async {
+      GenericProgressState ffFetchVideoDataState) async {
     bool completed = false;
-    if (state == FFprobeFetchVideoDataState.completed) {
+    if (ffFetchVideoDataState == GenericProgressState.completed) {
       completed = true;
     }
 
@@ -249,6 +246,8 @@ Stage 5/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegMergeFiles.uiStageMapp
     final templateStr =
         """[${_pb.generateDefaultProgressBar()}] ${chalk.brightCyan('${map(_pb.progress, 0, _pb.top, 0, 100).toStringAsFixed(2)}%')}
 Stage 5/$_maxStageUI ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStageMapping}""";
+
+    lastMsg = templateStr;
 
     await _printUI(templateStr);
   }
@@ -272,6 +271,13 @@ Stage 5/$_maxStageUI ${DownloadUIStageTemplate.stageFFprobeFetchVideoData.uiStag
 Stage 6/$_maxStageUI ${DownloadUIStageTemplate.stageFFmpegReencodeAndMergeVideo.uiStageMapping}
 Frame $frameCurrent of $frameTotal | Speed : $speed | FPS : $fps | Bitrate : $bitrate | ETA : $customETA""";
 
+    lastMsg = templateStr;
+
     await _printUI(templateStr);
+  }
+
+  Future<void> cleanup() async {
+    await _printUI(
+        List.generate(lastMsg.split('\n').length, (i) => '\n').join());
   }
 }

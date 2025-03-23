@@ -168,7 +168,7 @@ Future<bool> doDownloadHandling(
       '${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}.temp.png';
   final ffExtract =
       extractThumbnailFromVideo(pref, endVideoPath!, ffThumbExtractedPath);
-  await ui.printExtractThumbnailUI(FFmpegExtractThumb.started, endVideoPath!);
+  await ui.printExtractThumbnailUI(GenericProgressState.started, endVideoPath!);
 
   final ret = await ffExtract.last;
   if (ret!.eCode != 0) {
@@ -177,20 +177,20 @@ Future<bool> doDownloadHandling(
         thumbFP: ffThumbExtractedPath,
         endVideoFP: endVideoPath!);
     // TODO: more verbose error message
-    // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
     hardExit(
         'An error occured while running FFmpeg to extract thumbnail. Use the --debug flag to see more details');
   }
 
-  await ui.printExtractThumbnailUI(FFmpegExtractThumb.completed, endVideoPath!);
+  await ui.printExtractThumbnailUI(
+      GenericProgressState.completed, endVideoPath!);
 
   final mergedFinalVideoFP =
-      '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ')}"'; // FIXME: improve
+      '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ').replaceAll(RegExp(r'&'), 'and')}"';
 
   if (isDownloadingPreferredFormat) {
     final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
         ffThumbExtractedPath, mergedFinalVideoFP);
-    ui.printMergeFilesUI(FFmpegMergeFilesState.started, mergedFinalVideoFP);
+    ui.printMergeFilesUI(GenericProgressState.started, mergedFinalVideoFP);
 
     final ret2 = await ffMerge.last;
     if (ret2!.eCode != 0) {
@@ -199,15 +199,14 @@ Future<bool> doDownloadHandling(
           thumbFP: ffThumbExtractedPath,
           endVideoFP: endVideoPath!);
       // TODO: more verbose error message
-      // FIXME: CHANGE TO ONLY WARNING, AND CONTINUE TO THE NEXT VIDEO (while saving the progress)!
       hardExit(
           'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
     }
-    ui.printMergeFilesUI(FFmpegMergeFilesState.completed, mergedFinalVideoFP);
+    ui.printMergeFilesUI(GenericProgressState.completed, mergedFinalVideoFP);
   } else {
-    ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
+    ui.printFetchingVideoDataUI(GenericProgressState.started);
     final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
-    ui.printFetchingVideoDataUI(FFprobeFetchVideoDataState.started);
+    ui.printFetchingVideoDataUI(GenericProgressState.started);
 
     // TODO: proper logic
     final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
@@ -217,7 +216,8 @@ Future<bool> doDownloadHandling(
       if (info is ReencodeAndMergeProgress) {
         final fps = double.parse(info.progressData['fps']);
         final approxTotalFrames = int.parse((formerVideoData['streams']
-            as List<dynamic>)[0]['nb_read_packets']);
+                as List<dynamic>)[0][
+            'nb_read_packets']); // *Assume* the video stream is in the first stream
         final frames = int.parse(info.progressData['frame']);
 
         ui.printReencodeAndMergeFilesUI(
@@ -232,7 +232,7 @@ Future<bool> doDownloadHandling(
                 .trim(),
             (fps.sign == fps)
                 ? 'N/A'
-                : '~${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s'); // *Assume* the video stream is in the first stream
+                : '~${((approxTotalFrames - frames) / fps).toStringAsFixed(2)}s');
       }
 
       return info;
@@ -256,16 +256,17 @@ Future<bool> doDownloadHandling(
       thumbFP: ffThumbExtractedPath,
       endVideoFP: endVideoPath!);
 
+  await ui.cleanup();
+
   return true;
 }
 
-// TODO: split across multiple files
 Future<void> fetchVideosLogic(
     Preferences pref, String cookieFile, String playlistId) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (await videoDataFile.exists()) {
     hardExit(
-        'File ${pref.videoDataFileName} already exists. Delete / rename the file and try again, or do not supply the "--playlist_id" option to start downloading videos');
+        'File ${pref.videoDataFileName} already exists. Delete / rename the file and try again');
     // TODO: actual confirmation prompt to overwrite the file!
   }
   await videoDataFile.create();
@@ -314,7 +315,7 @@ Future<void> downloadVideosLogic(
   if (!await videoDataFile.exists()) {
     // TODO: make unnecessary later on
     hardExit(
-        'Video data file has not been created. Supply the "--playlist_id" option first before downloading the videos');
+        'Video data file has not been created. Use the "fetch" command and try again');
   }
 
   final outDir = passedOutDir ?? Directory.current.path;
@@ -390,7 +391,7 @@ Future<void> downloadSingleVideosLogic(Preferences pref, String cookieFile,
 
 void main(List<String> args) async {
   // TODO: Add detection to livestreams on playlist, as that will show the underlying FFmpeg output, with seemingly none of the usual yt-dlp output regarding downloading
-  // TODO: Provide other methods of auth (https://yt-dlp.memoryview.in/docs/advanced-features/authentication-and-cookies-in-yt-dlp), and maybe methods of checking if the cookie file is outdated, as it could lead to missing subtitles in a language (see https://www.youtube.com/watch?v=LuVAWbg4kns for example)
+  // TODO: Provide other methods of auth (see https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies and https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide), as an outdated cookie file could lead to missing subtitles in a language (see https://www.youtube.com/watch?v=LuVAWbg4kns for example)
   final argParser = ArgParser()
     ..addFlag('no_program_check',
         help:
@@ -455,7 +456,10 @@ void main(List<String> args) async {
           mode: FileMode.append);
       return;
     }
-    print('$levelName ${rec.message}');
+    final toPrint = '$levelName ${rec.message}';
+    final upper = (toPrint.length / stdout.terminalColumns).ceil();
+    print(
+        '$toPrint${List.filled((stdout.terminalColumns * upper) - toPrint.length, ' ').join()}');
   });
 
   ProcessSignal.sigint.watch().listen((_) {
@@ -493,7 +497,7 @@ void main(List<String> args) async {
   if (!parsedArgs.flag('no_program_check')) {
     final updtRes = await http.get(preferences.ytdlpVersionCheckUri);
     if (updtRes.statusCode != 200) {
-      final rlRemaining = updtRes.headers['X-RateLimit-Remaining'] as int;
+      final rlRemaining = int.parse(updtRes.headers['x-ratelimit-remaining']!);
       if (rlRemaining == 0) {
         final rlReset = DateTime.fromMillisecondsSinceEpoch(rlRemaining * 1000);
         logger.fine(

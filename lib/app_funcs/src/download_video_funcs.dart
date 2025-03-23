@@ -177,7 +177,6 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
   // yt-dlp can sometimes claim to have it 100% downloaded, but in reality the bytes_downloaded can sometimes still is still going up, but the percentage is still at 100%, causing this function to return multiple times
   final captionFilesPreventMultiple = <String>[];
 
-  // FIXME: move out of this func?
   await for (final tmpO in proc.stdout) {
     // There can be multiple lines (and \r) in 1 stdout message
     for (String tmpO2 in String.fromCharCodes(tmpO).split('\r')) {
@@ -302,6 +301,7 @@ Stream<FFmpegThumbReturnStatus?> extractThumbnailFromVideo(
       thumbPicFilePath: outPath, eCode: await proc.process.exitCode);
 }
 
+// FIXME: code duplication!
 Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
     List<String> captionFP, String thumbFP, String targetOutFP) async* {
   final proc = await ProcessRunner.spawn(
@@ -313,12 +313,15 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
                 captionFP.length, (i) => '-i "${captionFP.elementAt(i)}"',
                 growable: false)
             .join(' '),
-        TemplateReplacements.captionTrackMappingMetadata: List<String>.generate(
-                captionFP.length,
-                (i) =>
-                    '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
-                growable: false)
-            .join(' '),
+        TemplateReplacements.captionTrackMappingMetadata:
+            List<String>.generate(captionFP.length, (i) {
+          final modMap = Map<String, RegExp>.from(pref.regionMapping)
+            ..removeWhere(
+                (cCode, regex) => !regex.hasMatch(captionFP.elementAt(i)));
+          logger.fine('Picked ${modMap.entries.first.key}');
+          return '-map ${i + 1} -c:s:$i ass -metadata:s:$i language=${modMap.entries.first.key}';
+        }, growable: false)
+                .join(' '),
         TemplateReplacements.thumbIn: thumbFP,
         TemplateReplacements.finalOut: targetOutFP
       });
@@ -329,6 +332,7 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
   yield FFmpegMergeFilesStatus(eCode: await proc.process.exitCode);
 }
 
+// FIXME: code duplication!
 Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
     Preferences pref,
     String baseVideoFP,
@@ -344,12 +348,15 @@ Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
                 captionFP.length, (i) => '-i "${captionFP.elementAt(i)}"',
                 growable: false)
             .join(' '),
-        TemplateReplacements.captionTrackMappingMetadata: List<String>.generate(
-                captionFP.length,
-                (i) =>
-                    '-map ${i + 1} -c:s:$i copy -metadata:s:$i language="en"', // TODO: add logic for language detection. for now it is hardcoded to be en
-                growable: false)
-            .join(' '),
+        TemplateReplacements.captionTrackMappingMetadata:
+            List<String>.generate(captionFP.length, (i) {
+          final modMap = Map<String, RegExp>.from(pref.regionMapping)
+            ..removeWhere(
+                (cCode, regex) => !regex.hasMatch(captionFP.elementAt(i)));
+          logger.fine('Picked ${modMap.entries.first.key}');
+          return '-map ${i + 1} -c:s:$i ass -metadata:s:$i language=${modMap.entries.first.key}';
+        }, growable: false)
+                .join(' '),
         TemplateReplacements.thumbIn: thumbFP,
         TemplateReplacements.finalOut: targetOutFP
       });

@@ -124,7 +124,6 @@ enum TemplateReplacements {
 }
 
 // TODO: change to singleton?
-// TODO: docs
 sealed class ProcessRunner {
   static final List<Process> _processes = <Process>[];
 
