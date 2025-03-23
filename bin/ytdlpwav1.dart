@@ -145,8 +145,12 @@ Future<bool> doDownloadHandling(
     case ProcessNonZeroExitMessage():
       // TODO: More robust error handling!
       // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
-      logger.warning(
-          'Video named ${videoData.title} failed to be downloaded${(!isSingle) ? ', continuing' : ''}');
+      if (isSingle) {
+        logger.severe('Video named ${videoData.title} failed to be downloaded');
+      } else {
+        logger.warning(
+            'Video named ${videoData.title} failed to be downloaded, continuing');
+      }
       // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
       await cleanupGeneratedFiles(
           captionFPs: captionFP, endVideoFP: endVideoPath);
@@ -155,8 +159,13 @@ Future<bool> doDownloadHandling(
       return false;
     //break;
     case ProgressStateStayedUninitializedMessage():
-      logger.warning(
-          'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program${(!isSingle) ? ', continuing...' : ''}');
+      if (isSingle) {
+        logger.severe(
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program');
+      } else {
+        logger.warning(
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, continuing...');
+      }
       await cleanupGeneratedFiles(
           captionFPs: captionFP, endVideoFP: endVideoPath);
       ui.onDownloadFailure();
@@ -184,8 +193,16 @@ Future<bool> doDownloadHandling(
   await ui.printExtractThumbnailUI(
       GenericProgressState.completed, endVideoPath!);
 
+  String finalVideoFP = File(endVideoPath!).uri.pathSegments.last;
+  finalVideoFP = finalVideoFP
+      .replaceAll(RegExp(r'&'), 'and')
+      .replaceAll(RegExp(r'\('), '(')
+      .replaceAll(RegExp(r'\)'), ')')
+      .replaceAll(RegExp(r'\/'), 'or')
+      .replaceAll(RegExp(r'\_'),
+          ' '); // Order matters, the replace to whitespace must be the last!
   final mergedFinalVideoFP =
-      '"${pref.outputDirPath}${Platform.pathSeparator}${File(endVideoPath!).uri.pathSegments.last.replaceAll(RegExp(r'\_'), ' ').replaceAll(RegExp(r'&'), 'and')}"';
+      '"${pref.outputDirPath}${Platform.pathSeparator}$finalVideoFP"';
 
   if (isDownloadingPreferredFormat) {
     final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
@@ -503,7 +520,7 @@ void main(List<String> args) async {
         logger.fine(
             'Failed to check for yt-dlp updates. Headers : ${updtRes.headers}');
         logger.warning(
-            'Failed to check for yt-dlp updates. Rate limit exceeded. Please wait until ${rlReset.hour}:${rlReset.minute} and try again, or pass the --no_update_check flag to bypass this check. Continuing without checking for updates');
+            'Failed to check for yt-dlp updates. Rate limit exceeded. Please wait until ${rlReset.hour.toString().padLeft(2, '0')}:${rlReset.minute.toString().padLeft(2, '0')} and try again, or pass the --no_update_check flag to bypass this check. Continuing without checking for updates');
       } else {
         logger.fine(
             'Failed to check for yt-dlp updates. Status code : ${updtRes.statusCode}');
