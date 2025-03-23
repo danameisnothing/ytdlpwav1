@@ -319,7 +319,7 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
             ..removeWhere(
                 (cCode, regex) => !regex.hasMatch(captionFP.elementAt(i)));
           logger.fine('Picked ${modMap.entries.first.key}');
-          return '-map ${i + 1} -c:s:$i ass -metadata:s:$i language=${modMap.entries.first.key}';
+          return '-map ${i + 1} -c:s:$i srt -metadata:s:$i language=${modMap.entries.first.key}';
         }, growable: false)
                 .join(' '),
         TemplateReplacements.thumbIn: thumbFP,
@@ -354,7 +354,7 @@ Stream<ReencodeAndMergeReturnStatus> reencodeAndMergeFiles(
             ..removeWhere(
                 (cCode, regex) => !regex.hasMatch(captionFP.elementAt(i)));
           logger.fine('Picked ${modMap.entries.first.key}');
-          return '-map ${i + 1} -c:s:$i ass -metadata:s:$i language=${modMap.entries.first.key}';
+          return '-map ${i + 1} -c:s:$i srt -metadata:s:$i language=${modMap.entries.first.key}';
         }, growable: false)
                 .join(' '),
         TemplateReplacements.thumbIn: thumbFP,
