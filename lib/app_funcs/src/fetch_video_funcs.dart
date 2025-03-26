@@ -3,17 +3,6 @@ import 'dart:convert';
 import 'package:ytdlpwav1/app_utils/app_utils.dart';
 import 'package:ytdlpwav1/app_settings/app_settings.dart';
 
-final class ProcessExitNonZeroException implements Exception {
-  final String msg;
-  final int? eCode;
-
-  ProcessExitNonZeroException([this.msg = '', this.eCode]);
-
-  @override
-  String toString() =>
-      'ProcessNonZeroException: $msg ${(eCode != null) ? '(exit code $eCode)' : ''}';
-}
-
 // FIXME: add support for more authentication options when we do support them
 /// Returns the playlist quantity of a YouTube playlist, with a given cookiefile path for authentication
 ///
@@ -29,12 +18,12 @@ Future<int> getPlaylistQuantity(
       });
   logger.fine('Started yt-dlp process for fetching playlist quantity');
 
-  final data = await proc.stdout.first.then((e) => String.fromCharCodes(e));
+  final data = await proc.stdout.first
+      .then((e) => String.fromCharCodes(e), onError: (e) => '');
 
   if (await proc.process.exitCode != 0) {
-    throw ProcessExitNonZeroException(
-        'FFmpeg exited abnormally while fetching playlist quantity of playlist ID $playlistId',
-        await proc.process.exitCode);
+    hardExit(
+        'FFmpeg exited abnormally while fetching playlist quantity of playlist ID $playlistId');
   }
 
   logger.fine('Got $data on playlist count');
@@ -78,8 +67,7 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
   }
 
   if (await proc.process.exitCode != 0) {
-    throw ProcessExitNonZeroException(
-        'FFmpeg exited abnormally while fetching playlist info of playlist ID $playlistId',
-        await proc.process.exitCode);
+    hardExit(
+        'FFmpeg exited abnormally while fetching playlist info of playlist ID $playlistId');
   }
 }

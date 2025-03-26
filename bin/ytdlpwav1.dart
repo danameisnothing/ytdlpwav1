@@ -35,12 +35,14 @@ Future<void> cleanupGeneratedFiles(
   }
 }
 
+// What was the purpose of this function???
 Future<void> onDownloadFailureBeforeContinuing(
     Preferences pref, List<VideoInPlaylist> videos, VideoInPlaylist vid) async {
   final videoDataFile = File(pref.videoDataFileName);
 
   logger.fine('before $videos');
-  videos.firstWhere((e) => e == vid).hasDownloadedSuccessfully = true;
+  videos.firstWhere((e) => e == vid).hasDownloadedSuccessfully =
+      false; // Why was this true before???
   logger.fine('after $videos');
 
   final convertedRes =
@@ -282,11 +284,9 @@ Future<void> fetchVideosLogic(
     Preferences pref, String cookieFile, String playlistId) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (await videoDataFile.exists()) {
-    hardExit(
-        'File ${pref.videoDataFileName} already exists. Delete / rename the file and try again');
-    // TODO: actual confirmation prompt to overwrite the file!
+    logger.info(
+        'Overwriting ${pref.videoDataFileName}, terminate the program to cancel this operation');
   }
-  await videoDataFile.create();
 
   final spinner = CliSpin(spinner: CliSpinners.dots);
 
@@ -318,8 +318,29 @@ Future<void> fetchVideosLogic(
 
   logger.fine('End result is $videoInfos');
 
+  late final List<VideoInPlaylist> dataToConvert;
+
+  if (await videoDataFile.exists()) {
+    dataToConvert =
+        (jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>)
+            .map((e) => VideoInPlaylist.fromJson(e))
+            .toList();
+    videoInfos.removeWhere((e) {
+      final modL = List<VideoInPlaylist>.from(dataToConvert)
+        ..removeWhere((f) => f.title != e.title);
+      final retVal = (modL.isEmpty) ? false : true;
+      logger.fine('${e.title}, $modL : $retVal');
+      return retVal;
+    });
+    logger.info('Concatenating result to existing data file');
+    dataToConvert.addAll(videoInfos);
+  } else {
+    await videoDataFile.create();
+    dataToConvert = videoInfos;
+  }
+
   final convertedRes =
-      jsonEncode({'res': videoInfos.map((e) => e.toJson()).toList()});
+      jsonEncode({'res': dataToConvert.map((e) => e.toJson()).toList()});
 
   logger.fine('Converted video info map to $convertedRes');
 
@@ -345,6 +366,7 @@ Future<void> downloadVideosLogic(
     // TODO: create a confirmation prompt to create the folder?
     hardExit('The output directory does not exist');
   }
+  pref.outputDirPath = outDir;
 
   // Downloading logic
   final videoInfos =
@@ -390,6 +412,7 @@ Future<void> downloadSingleVideosLogic(Preferences pref, String cookieFile,
     // TODO: create a confirmation prompt to create the folder?
     hardExit('The output directory does not exist');
   }
+  pref.outputDirPath = outDir;
 
   final decoyValue = <VideoInPlaylist>[
     VideoInPlaylist('', id, '', '', DateTime.now(), false)
