@@ -23,7 +23,7 @@ Future<int> getPlaylistQuantity(
 
   if (await proc.process.exitCode != 0) {
     hardExit(
-        'FFmpeg exited abnormally while fetching playlist quantity of playlist ID $playlistId');
+        'yt-dlp exited abnormally while fetching playlist quantity of playlist ID $playlistId');
   }
 
   logger.fine('Got $data on playlist count');
@@ -68,6 +68,6 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
 
   if (await proc.process.exitCode != 0) {
     hardExit(
-        'FFmpeg exited abnormally while fetching playlist info of playlist ID $playlistId');
+        'yt-dlp exited abnormally while fetching playlist info of playlist ID $playlistId');
   }
 }
