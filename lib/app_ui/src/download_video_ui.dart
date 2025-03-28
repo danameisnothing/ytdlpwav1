@@ -34,7 +34,7 @@ final class DownloadVideoUI {
 
   DownloadVideoUI(this._videos)
       : _pb = ProgressBar(
-            top: _videos.length,
+            top: _videos.where((e) => !e.hasDownloadedSuccessfully).length,
             innerWidth: 32,
             renderFunc: (total, current) {
               return '[${ProgressBar.innerProgressBarIdent}]';

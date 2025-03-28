@@ -392,6 +392,7 @@ Future<void> downloadVideosLogic(
       continue;
     }
 
+    // TODO: This only saves when we are done! Do this when we are done processing each video!
     videoInfos.firstWhere((e) => e == videoData).hasDownloadedSuccessfully =
         true;
     await videoDataFile.writeAsString(
