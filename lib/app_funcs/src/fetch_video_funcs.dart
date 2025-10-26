@@ -47,23 +47,50 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
       });
   logger.fine('Started yt-dlp process for fetching video infos');
 
-  await for (final e in proc.stdout) {
-    final data = jsonDecode(String.fromCharCodes(e));
+  // GenAI-code!
+  StringBuffer buffer = StringBuffer();
 
-    final uploadDate = data['upload_date'] as String;
-    final parsed = VideoInPlaylist(
-        data['title'],
-        data['id'],
-        data['description'],
-        data['uploader'],
-        DateTime(
-          int.parse(uploadDate.substring(0, 4)),
-          int.parse(uploadDate.substring(4, 6)),
-          int.parse(uploadDate.substring(6, 8)),
-        ),
-        false);
-    logger.fine('Got update on stdout, parsed as $parsed');
-    yield parsed;
+  await for (final e in proc.stdout) {
+    // Replaced entirely with GenAI-code!
+    buffer.write(String.fromCharCodes(e));
+    String content = buffer.toString();
+
+    // Process all complete JSON objects in the buffer
+    while (content.contains('\n')) {
+      int newlineIndex = content.indexOf('\n');
+      String jsonLine = content.substring(0, newlineIndex).trim();
+      content = content.substring(newlineIndex + 1);
+
+      if (jsonLine.isEmpty) continue;
+
+      try {
+        final data = jsonDecode(jsonLine);
+        final uploadDateStr = data['upload_date'] as String?;
+
+        if (uploadDateStr == null || uploadDateStr.length != 8) {
+          logger.warning('Missing or invalid upload_date for video ${data['id']}');
+          continue;
+        }
+
+        final parsed = VideoInPlaylist(
+          data['title'],
+          data['id'],
+          data['description'],
+          data['uploader'],
+          DateTime(
+            int.parse(uploadDateStr.substring(0, 4)),
+            int.parse(uploadDateStr.substring(4, 6)),
+            int.parse(uploadDateStr.substring(6, 8)),
+          ),
+          false);
+        logger.fine('Got update on stdout, parsed as $parsed');
+        yield parsed;
+      } catch (e) {
+        logger.warning('Failed to parse JSON: $jsonLine, error: $e');
+      }
+    }
+
+    buffer = StringBuffer(content);
   }
 
   if (await proc.process.exitCode != 0) {
