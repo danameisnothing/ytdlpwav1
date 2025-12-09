@@ -470,6 +470,10 @@ void main(List<String> args) async {
     print(argParser.usage);
     exit(1);
   }
+  if (parsedArgs.arguments.isEmpty) {
+    print(argParser.usage);
+    exit(1);
+  }
 
   if (parsedArgs.command == null) hardExit('No valid command specified');
 
@@ -575,8 +579,21 @@ void main(List<String> args) async {
 
   switch (parsedArgs.command!.name) {
     case 'fetch':
-      final cookieFile = parsedArgs.command!.option('cookie_file');
-      final playlistId = parsedArgs.command!.option('playlist_id')!;
+      // TODO: allow downloading without cookie_file
+      late final cookieFile;
+      try {
+        cookieFile = parsedArgs.command!.option('cookie_file');
+      } on ArgumentError catch (_) {
+        hardExit('Option "cookie_file" is mandatory, but missing');
+      }
+
+      late final playlistId;
+      try {
+        playlistId = parsedArgs.command!.option('playlist_id')!;
+      } on ArgumentError catch (_) {
+        hardExit('Option "playlist_id" is mandatory, but missing');
+      }
+
       if (!await File((cookieFile ?? '')).exists()) {
         hardExit('Invalid cookie path given');
       }
@@ -588,7 +605,14 @@ void main(List<String> args) async {
       await fetchVideosLogic(preferences, cookieFile!, playlistId);
       exit(0);
     case 'download':
-      final cookieFile = parsedArgs.command!.option('cookie_file');
+      // TODO: allow downloading without cookie_file
+      late final cookieFile;
+      try {
+        cookieFile = parsedArgs.command!.option('cookie_file');
+      } on ArgumentError catch (_) {
+        hardExit('Option "cookie_file" is mandatory, but missing');
+      }
+
       final outDir = parsedArgs.command!.option('output_dir');
       if (!await File((cookieFile ?? '')).exists()) {
         hardExit('Invalid cookie path given');
@@ -601,9 +625,23 @@ void main(List<String> args) async {
       await downloadVideosLogic(preferences, cookieFile!, outDir);
       exit(0);
     case 'download_single':
-      final cookieFile = parsedArgs.command!.option('cookie_file');
+      // TODO: allow downloading without cookie_file
+      late final cookieFile;
+      try {
+        cookieFile = parsedArgs.command!.option('cookie_file');
+      } on ArgumentError catch (_) {
+        hardExit('Option "cookie_file" is mandatory, but missing');
+      }
+
+      late final id;
+      try {
+        id = parsedArgs.command!.option('id')!;
+      } on ArgumentError catch (_) {
+        hardExit('Option "id" is mandatory, but missing');
+      }
+
       final outDir = parsedArgs.command!.option('output_dir');
-      final id = parsedArgs.command!.option('id')!;
+
       if (!await File((cookieFile ?? '')).exists()) {
         hardExit('Invalid cookie path given');
       }

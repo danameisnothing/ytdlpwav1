@@ -63,9 +63,9 @@ Future<bool> hasProgramInstalled(String program) async {
     for (final file in await Directory(path).list().toList()) {
       final fName = file.uri.pathSegments.last;
       if (Platform.isWindows) {
-        if (fName.contains(program) && fName.endsWith('.exe')) return true;
+        if (fName == "$program.exe") return true;
       } else {
-        if (fName.contains(program)) return true;
+        if (fName == program) return true;
       }
     }
   }
