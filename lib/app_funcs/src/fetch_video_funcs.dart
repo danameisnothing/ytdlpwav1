@@ -22,8 +22,9 @@ Future<int> getPlaylistQuantity(
       .then((e) => String.fromCharCodes(e), onError: (e) => '');
 
   if (await proc.process.exitCode != 0) {
-    hardExit(
-        'yt-dlp exited abnormally while fetching playlist quantity of playlist ID $playlistId');
+    // TODO: change to specific type
+    throw Exception(
+        'yt-dlp exited abnormally while fetching playlist quantity of playlist ID $playlistId. This may be caused by outdated auth cookies, or an outdated yt-dlp version. Pass --debug to see detailed logs');
   }
 
   logger.fine('Got $data on playlist count');

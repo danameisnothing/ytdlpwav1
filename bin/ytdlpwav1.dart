@@ -107,7 +107,7 @@ Future<bool> doDownloadHandling(
   // Assume we are not able to download in the preferred codec
   if (tmpFirst is ProcessNonZeroExitMessage) {
     logger.warning(
-        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}');
+        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}. Although, this could be caused by expired auth cookies.');
     isDownloadingPreferredFormat = false;
 
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
@@ -148,10 +148,11 @@ Future<bool> doDownloadHandling(
       // TODO: More robust error handling!
       // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
       if (isSingle) {
-        logger.severe('Video named ${videoData.title} failed to be downloaded');
+        logger.severe(
+            'Video named ${videoData.title} failed to be downloaded. Although, this could be caused by expired auth cookies.');
       } else {
         logger.warning(
-            'Video named ${videoData.title} failed to be downloaded, continuing');
+            'Video named ${videoData.title} failed to be downloaded, continuing. Although, this could be caused by expired auth cookies.');
       }
       // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
       await cleanupGeneratedFiles(
@@ -291,8 +292,13 @@ Future<void> fetchVideosLogic(
   final spinner = CliSpin(spinner: CliSpinners.dots);
 
   spinner.start('Waiting for yt-dlp output');
-  final playlistQuantity =
-      await getPlaylistQuantity(pref, cookieFile, playlistId);
+  late final playlistQuantity;
+  try {
+    playlistQuantity = await getPlaylistQuantity(pref, cookieFile, playlistId);
+  } on Exception catch (e) {
+    spinner.stop();
+    hardExit(e.toString());
+  }
   spinner.stop();
 
   logger.info('Fetched video quantity in playlist');
@@ -466,6 +472,7 @@ void main(List<String> args) async {
   try {
     parsedArgs = argParser.parse(args);
   } on ArgParserException catch (_) {
+    print("Invalid usage, see below :");
     // We cannot use hardExit since we haven't set up the logger levels yet
     print(argParser.usage);
     exit(1);
@@ -576,7 +583,8 @@ void main(List<String> args) async {
   }
 
   // TODO: allow user to not use a cookiefile
-
+  logger.info(
+      "Make sure to have up-to-date auth cookies beforehand, to prevent unexpected download failures, or YouTube returning sub-optimal quality videos!");
   switch (parsedArgs.command!.name) {
     case 'fetch':
       // TODO: allow downloading without cookie_file

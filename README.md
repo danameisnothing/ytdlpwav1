@@ -12,6 +12,9 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 * yt-dlp (The latest version is **heavily recommended**, as an out-of-date version can cause issues regarding downloads, either to fetch video information, or downloading the actual video)
 
 ## Getting Started Guide
+> [!NOTE]
+> Do not use shorthands for the `cookie_path` argument, such as `~` for your current home folder. Always use absolute paths!
+> And also make sure to have an up-to-date YouTube cookie file! If not, then you might experience unexpected download failures, or sub-optimal video quality.
 ### Downloading YouTube videos from a YouTube Playlist
 * To download a collection of videos from a YouTube playlist, you must first fetch a list of videos from a playlist. To do that, first run the executable with arguments as such : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID"`. This command will generate a file called `ytdlpwav1_video_data.json` that contains YouTube video IDs from the chosen playlist.
 * After that, to download the videos themselves, run the executable with the following arguments : `ytdlpwav1 download --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR"`
