@@ -25,11 +25,14 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 ### Miscellaneous
 * If you are having trouble with the program falsely identifying that you do not have either FFmpeg, FFprobe, or yt-dlp, pass in `--no_program_check`, like so : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID --no_program_check`, or `ytdlpwav1 download_single --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR" --id "YOUR_YOUTUBE_VIDEO_ID" --no_program_check` for downloading multiple videos
 * If the program is not working, use `--debug` to tell the program to output a verbose log file, which can be used to diagnose failures
+* If you don't want to supply a cookie file, just omit the `--cookie_file` argument
+* If you want to also download YouTube's automatic captions, supply the `--download_auto_subs` flag for the download sub-commands (`download`, and `download_single`)
+
+> [!WARNING]
+> Downloading videos with YouTube's automatic captions may cause you to be throttled by YouTube, by `yt-dlp` erroring out, complaining about a Too Many Requests error (HTTP 429). If this happens, do not use the `--download_auto_subs` option.
 
 > [!NOTE]
-> Currently, it is required to supply the `cookie_file` option. This will not be required in the future.
-
-> [!NOTE]
+> Currently, the combining step of this program doesn't make the subtitles a default. This is planned to be addressed.
 
 ## Configuration
 *For now, ytdlpwav1 outputs a video with a target resolution of max 1080p. You can not change this setting just yet. This is planned to be configurable in the future.*

@@ -40,10 +40,10 @@ Future<void> onDownloadFailureBeforeContinuing(
     Preferences pref, List<VideoInPlaylist> videos, VideoInPlaylist vid) async {
   final videoDataFile = File(pref.videoDataFileName);
 
-  logger.fine('before $videos');
+  logger.fine('before ${videos.firstWhere((e) => e == vid)}');
   videos.firstWhere((e) => e == vid).hasDownloadedSuccessfully =
       false; // Why was this true before???
-  logger.fine('after $videos');
+  logger.fine('after ${videos.firstWhere((e) => e == vid)}');
 
   final convertedRes =
       jsonEncode({'res': videos.map((e) => e.toJson()).toList()});
@@ -58,7 +58,8 @@ Future<bool> doDownloadHandling(
     final VideoInPlaylist videoData,
     final List<VideoInPlaylist> videoInfos,
     final int idxInVideoInfo,
-    final bool isSingle) async {
+    final bool isSingle,
+    final bool writeAutoSubs) async {
   // Exclusively for deletion in the case the process exited with a non-zero code
   final captionFP = <String>[];
   // This should only be reassigned once
@@ -68,7 +69,7 @@ Future<bool> doDownloadHandling(
   bool isDownloadingPreferredFormat = true;
 
   resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-          pref, pref.videoPreferredCmd, videoData)
+          pref, pref.videoPreferredCmd, videoData, writeAutoSubs)
       .asBroadcastStream();
   ui.setUseAllStageTemplates(false);
 
@@ -107,11 +108,11 @@ Future<bool> doDownloadHandling(
   // Assume we are not able to download in the preferred codec
   if (tmpFirst is ProcessNonZeroExitMessage) {
     logger.warning(
-        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
+        'Video named ${videoData.title} failed to be downloaded optimally, using fallback command instead. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
     isDownloadingPreferredFormat = false;
 
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-            pref, pref.videoRegularCmd, videoData)
+            pref, pref.videoRegularCmd, videoData, writeAutoSubs)
         .asBroadcastStream();
     ui.setUseAllStageTemplates(true);
 
@@ -152,7 +153,7 @@ Future<bool> doDownloadHandling(
             'Video named ${videoData.title} failed to be downloaded. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
       } else {
         logger.warning(
-            'Video named ${videoData.title} failed to be downloaded, continuing. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
+            'Video named ${videoData.title} failed to be downloaded using both methods, skipping! This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
       }
       // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
       await cleanupGeneratedFiles(
@@ -167,7 +168,7 @@ Future<bool> doDownloadHandling(
             'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program');
       } else {
         logger.warning(
-            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, continuing...');
+            'yt-dlp did not create any video and audio file for video named ${videoData.title}. It is possible that the file is already downloaded, but have not been fully processed by this program, skipping!');
       }
       await cleanupGeneratedFiles(
           captionFPs: captionFP, endVideoFP: endVideoPath);
@@ -204,13 +205,23 @@ Future<bool> doDownloadHandling(
       .replaceAll(RegExp(r'\/'), 'or')
       .replaceAll(RegExp(r'\_'),
           ' '); // Order matters, the replace to whitespace must be the last!
-  final mergedFinalVideoFP =
-      '"${pref.outputDirPath}${Platform.pathSeparator}$finalVideoFP"';
+  // To fix cases where the original yt-dlp filename is the exact same as this fixed name
+  final mergedTmpVideoFP =
+      '"${pref.outputDirPath}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}_$finalVideoFP"';
+  // might as well check, but if the file path has length < 2, something is seriously wrong
+  if (mergedTmpVideoFP.length < 2) {
+    await cleanupGeneratedFiles(
+        captionFPs: captionFP,
+        thumbFP: ffThumbExtractedPath,
+        endVideoFP: endVideoPath!);
+    hardExit(
+        'Generated temporary file path length < 2 (${mergedTmpVideoFP.length}), WTF?. Use the --debug flag to see more details');
+  }
 
   if (isDownloadingPreferredFormat) {
-    final ffMerge = mergeFiles(pref, endVideoPath!, captionFP,
-        ffThumbExtractedPath, mergedFinalVideoFP);
-    ui.printMergeFilesUI(GenericProgressState.started, mergedFinalVideoFP);
+    final ffMerge = mergeFiles(
+        pref, endVideoPath!, captionFP, ffThumbExtractedPath, mergedTmpVideoFP);
+    ui.printMergeFilesUI(GenericProgressState.started, mergedTmpVideoFP);
 
     final ret2 = await ffMerge.last;
     if (ret2!.eCode != 0) {
@@ -222,15 +233,15 @@ Future<bool> doDownloadHandling(
       hardExit(
           'An error occured while running FFmpeg to merging files. Use the --debug flag to see more details');
     }
-    ui.printMergeFilesUI(GenericProgressState.completed, mergedFinalVideoFP);
+    ui.printMergeFilesUI(GenericProgressState.completed, mergedTmpVideoFP);
   } else {
     ui.printFetchingVideoDataUI(GenericProgressState.started);
     final formerVideoData = await fetchVideoInfo(pref, endVideoPath!);
     ui.printFetchingVideoDataUI(GenericProgressState.started);
 
     // TODO: proper logic
-    final ffReencodeAndMerge = reencodeAndMergeFiles(pref, endVideoPath!,
-        captionFP, ffThumbExtractedPath, mergedFinalVideoFP);
+    final ffReencodeAndMerge = reencodeAndMergeFiles(
+        pref, endVideoPath!, captionFP, ffThumbExtractedPath, mergedTmpVideoFP);
 
     final last = await ffReencodeAndMerge.asyncMap((info) async {
       if (info is ReencodeAndMergeProgress) {
@@ -242,7 +253,7 @@ Future<bool> doDownloadHandling(
 
         ui.printReencodeAndMergeFilesUI(
             (int.parse(info.progressData['frame']) / approxTotalFrames) * 100,
-            mergedFinalVideoFP,
+            mergedTmpVideoFP,
             frames,
             approxTotalFrames,
             fps,
@@ -275,6 +286,10 @@ Future<bool> doDownloadHandling(
       captionFPs: captionFP,
       thumbFP: ffThumbExtractedPath,
       endVideoFP: endVideoPath!);
+
+  // To fix cases where the original yt-dlp filename is the exact same as this fixed name
+  await File(mergedTmpVideoFP.substring(1, mergedTmpVideoFP.length - 1))
+      .rename("${pref.outputDirPath}${Platform.pathSeparator}$finalVideoFP");
 
   await ui.cleanup();
 
@@ -352,7 +367,8 @@ Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   await videoDataFile.writeAsString(convertedRes, flush: true);
 }
 
-Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
+Future<void> downloadVideosLogic(
+    Preferences pref, String? passedOutDir, final bool writeAutoSubs) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (!await videoDataFile.exists()) {
     // TODO: make unnecessary later on
@@ -388,8 +404,8 @@ Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
       continue;
     }
 
-    final ret = await doDownloadHandling(
-        ui, pref, videoData, videoInfos, videoInfos.indexOf(videoData), false);
+    final ret = await doDownloadHandling(ui, pref, videoData, videoInfos,
+        videoInfos.indexOf(videoData), false, writeAutoSubs);
 
     if (!ret) {
       // doDownloadHandling already logs the error message at this point, so just continue
@@ -405,8 +421,8 @@ Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
   }
 }
 
-Future<void> downloadSingleVideosLogic(
-    Preferences pref, String? passedOutDir, final String id) async {
+Future<void> downloadSingleVideosLogic(Preferences pref, String? passedOutDir,
+    final String id, final bool writeAutoSubs) async {
   final outDir = passedOutDir ?? Directory.current.path;
   // Exclusively for logging if you are wondering why
   if (passedOutDir != outDir) {
@@ -425,8 +441,8 @@ Future<void> downloadSingleVideosLogic(
 
   final ui = DownloadVideoUI(decoyValue);
 
-  final ret =
-      await doDownloadHandling(ui, pref, decoyValue.first, decoyValue, 0, true);
+  final ret = await doDownloadHandling(
+      ui, pref, decoyValue.first, decoyValue, 0, true, writeAutoSubs);
 
   if (!ret) {
     // doDownloadHandling already logs the error message at this point, so just continue
@@ -446,7 +462,8 @@ void main(List<String> args) async {
         help:
             'Skips checking for available updates for yt-dlp. Useful if the program consistently fails to check for updates, or is falsely identifying an out-of-date version',
         negatable: false)
-    ..addFlag('debug', abbr: 'd', help: 'Logs debug output on a file');
+    ..addFlag('debug',
+        abbr: 'd', help: 'Logs debug output on a file', negatable: false);
 
   argParser.addCommand('fetch')
     ..addOption('cookie_file',
@@ -457,14 +474,24 @@ void main(List<String> args) async {
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file')
     ..addOption('output_dir',
-        abbr: 'o', help: 'The target output directory of downloaded videos');
+        abbr: 'o', help: 'The target output directory of downloaded videos')
+    ..addFlag('download_auto_subs',
+        abbr: 's',
+        help: 'Whether to download the YouTube automatic captions too',
+        defaultsTo: false,
+        negatable: false);
   argParser.addCommand('download_single')
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file')
     ..addOption('output_dir',
         abbr: 'o', help: 'The target output directory of downloaded videos')
     ..addOption('id',
-        abbr: 'i', help: 'The video ID to download', mandatory: true);
+        abbr: 'i', help: 'The video ID to download', mandatory: true)
+    ..addFlag('download_auto_subs',
+        abbr: 's',
+        help: 'Whether to download the YouTube automatic captions too',
+        defaultsTo: false,
+        negatable: false);
 
   late final ArgResults parsedArgs;
   try {
@@ -606,6 +633,7 @@ void main(List<String> args) async {
       exit(0);
     case 'download':
       final cookieFile = parsedArgs.command!.option('cookie_file');
+      final downloadAutoSubs = parsedArgs.command!.flag("download_auto_subs");
 
       final outDir = parsedArgs.command!.option('output_dir');
       if (cookieFile != null && !await File((cookieFile)).exists()) {
@@ -616,10 +644,11 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..outputDirPath = outDir;
 
-      await downloadVideosLogic(preferences, outDir);
+      await downloadVideosLogic(preferences, outDir, downloadAutoSubs);
       exit(0);
     case 'download_single':
       final cookieFile = parsedArgs.command!.option('cookie_file');
+      final downloadAutoSubs = parsedArgs.command!.flag("download_auto_subs");
 
       late final String id;
       try {
@@ -638,7 +667,8 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..outputDirPath = outDir;
 
-      await downloadSingleVideosLogic(preferences, outDir, id);
+      await downloadSingleVideosLogic(
+          preferences, outDir, id, downloadAutoSubs);
       exit(0);
   }
 

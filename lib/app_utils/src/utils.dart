@@ -107,6 +107,7 @@ final class VideoInPlaylist {
 
 /// An enum containing the string to be replaced in the command templates
 enum TemplateReplacements {
+  writeAutoSubs(template: '<write_auto_subs>'),
   cookie(template: '<cookie_arg>'),
   playlistId(template: '<playlist_id>'),
   videoId(template: '<video_id>'),
