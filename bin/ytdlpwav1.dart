@@ -53,13 +53,13 @@ Future<void> onDownloadFailureBeforeContinuing(
 }
 
 Future<(bool, String?)> doDownloadHandling(
-    final DownloadVideoUI ui,
-    Preferences pref,
-    final VideoInPlaylist videoData,
-    final List<VideoInPlaylist> videoInfos,
-    final int idxInVideoInfo,
-    final bool isSingle,
-    final bool writeAutoSubs) async {
+  final DownloadVideoUI ui,
+  Preferences pref,
+  final VideoInPlaylist videoData,
+  final List<VideoInPlaylist> videoInfos,
+  final int idxInVideoInfo,
+  final bool isSingle,
+) async {
   // Exclusively for deletion in the case the process exited with a non-zero code
   final captionFP = <String>[];
   // This should only be reassigned once
@@ -69,7 +69,7 @@ Future<(bool, String?)> doDownloadHandling(
   bool isDownloadingPreferredFormat = true;
 
   resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-          pref, pref.videoPreferredCmd, videoData, writeAutoSubs)
+          pref, pref.videoPreferredCmd, videoData)
       .asBroadcastStream();
   ui.setUseAllStageTemplates(false);
 
@@ -112,7 +112,7 @@ Future<(bool, String?)> doDownloadHandling(
     isDownloadingPreferredFormat = false;
 
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
-            pref, pref.videoRegularCmd, videoData, writeAutoSubs)
+            pref, pref.videoRegularCmd, videoData)
         .asBroadcastStream();
     ui.setUseAllStageTemplates(true);
 
@@ -369,8 +369,7 @@ Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   await videoDataFile.writeAsString(convertedRes, flush: true);
 }
 
-Future<void> downloadVideosLogic(
-    Preferences pref, String? passedOutDir, final bool writeAutoSubs) async {
+Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (!await videoDataFile.exists()) {
     // TODO: make unnecessary later on
@@ -396,7 +395,7 @@ Future<void> downloadVideosLogic(
           .map((e) => VideoInPlaylist.fromJson(e))
           .toList();
   logger.fine(
-      'Retrieved video data (description key removed) as ${(jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>).map((e) {
+      'Retrieved video data (description key removed in logs) as ${(jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>).map((e) {
     e.remove("description");
     return e;
   }).toList()}');
@@ -410,8 +409,8 @@ Future<void> downloadVideosLogic(
       continue;
     }
 
-    final (ret, fullFP) = await doDownloadHandling(ui, pref, videoData,
-        videoInfos, videoInfos.indexOf(videoData), false, writeAutoSubs);
+    final (ret, fullFP) = await doDownloadHandling(
+        ui, pref, videoData, videoInfos, videoInfos.indexOf(videoData), false);
 
     if (!ret) {
       // doDownloadHandling already logs the error message at this point, so just continue
@@ -433,8 +432,8 @@ Future<void> downloadVideosLogic(
   }
 }
 
-Future<void> downloadSingleVideosLogic(Preferences pref, String? passedOutDir,
-    final String id, final bool writeAutoSubs) async {
+Future<void> downloadSingleVideosLogic(
+    Preferences pref, String? passedOutDir, final String id) async {
   final outDir = passedOutDir ?? Directory.current.path;
   // Exclusively for logging if you are wondering why
   if (passedOutDir != outDir) {
@@ -453,8 +452,8 @@ Future<void> downloadSingleVideosLogic(Preferences pref, String? passedOutDir,
 
   final ui = DownloadVideoUI(decoyValue);
 
-  final (ret, _) = await doDownloadHandling(
-      ui, pref, decoyValue.first, decoyValue, 0, true, writeAutoSubs);
+  final (ret, _) =
+      await doDownloadHandling(ui, pref, decoyValue.first, decoyValue, 0, true);
 
   if (!ret) {
     // doDownloadHandling already logs the error message at this point, so just continue
@@ -491,7 +490,13 @@ void main(List<String> args) async {
         abbr: 's',
         help: 'Whether to download the YouTube automatic captions too',
         defaultsTo: false,
-        negatable: false);
+        negatable: false)
+    ..addOption('preferred_width',
+        abbr: 'w', help: 'Preferred downloaded video width', defaultsTo: '1920')
+    ..addOption('preferred_height',
+        abbr: 'h',
+        help: 'Preferred downloaded video height',
+        defaultsTo: '1080');
   argParser.addCommand('download_single')
     ..addOption('cookie_file',
         abbr: 'c', help: 'The path to the YouTube cookie file')
@@ -503,7 +508,13 @@ void main(List<String> args) async {
         abbr: 's',
         help: 'Whether to download the YouTube automatic captions too',
         defaultsTo: false,
-        negatable: false);
+        negatable: false)
+    ..addOption('preferred_width',
+        abbr: 'w', help: 'Preferred downloaded video width', defaultsTo: '1920')
+    ..addOption('preferred_height',
+        abbr: 'h',
+        help: 'Preferred downloaded video height',
+        defaultsTo: '1080');
 
   late final ArgResults parsedArgs;
   try {
@@ -647,6 +658,17 @@ void main(List<String> args) async {
       final cookieFile = parsedArgs.command!.option('cookie_file');
       final downloadAutoSubs = parsedArgs.command!.flag("download_auto_subs");
 
+      final preferredWidth =
+          int.tryParse(parsedArgs.command!.option("preferred_width")!);
+      if (preferredWidth == null) {
+        hardExit("Not a valid integer for width");
+      }
+      final preferredHeight =
+          int.tryParse(parsedArgs.command!.option("preferred_height")!);
+      if (preferredHeight == null) {
+        hardExit("Not a valid integer for height");
+      }
+
       final outDir = parsedArgs.command!.option('output_dir');
       if (cookieFile != null && !await File((cookieFile)).exists()) {
         hardExit('Invalid cookie path given');
@@ -654,13 +676,27 @@ void main(List<String> args) async {
 
       preferences
         ..cookieFilePath = cookieFile
-        ..outputDirPath = outDir;
+        ..outputDirPath = outDir
+        ..writeAutoSubs = downloadAutoSubs
+        ..preferredWidth = preferredWidth
+        ..preferredHeight = preferredHeight;
 
-      await downloadVideosLogic(preferences, outDir, downloadAutoSubs);
+      await downloadVideosLogic(preferences, outDir);
       exit(0);
     case 'download_single':
       final cookieFile = parsedArgs.command!.option('cookie_file');
       final downloadAutoSubs = parsedArgs.command!.flag("download_auto_subs");
+
+      final preferredWidth =
+          int.tryParse(parsedArgs.command!.option("preferred_width")!);
+      if (preferredWidth == null) {
+        hardExit("Not a valid integer for width");
+      }
+      final preferredHeight =
+          int.tryParse(parsedArgs.command!.option("preferred_height")!);
+      if (preferredHeight == null) {
+        hardExit("Not a valid integer for height");
+      }
 
       late final String id;
       try {
@@ -677,10 +713,12 @@ void main(List<String> args) async {
 
       preferences
         ..cookieFilePath = cookieFile
-        ..outputDirPath = outDir;
+        ..outputDirPath = outDir
+        ..writeAutoSubs = downloadAutoSubs
+        ..preferredWidth = preferredWidth
+        ..preferredHeight = preferredHeight;
 
-      await downloadSingleVideosLogic(
-          preferences, outDir, id, downloadAutoSubs);
+      await downloadSingleVideosLogic(preferences, outDir, id);
       exit(0);
   }
 

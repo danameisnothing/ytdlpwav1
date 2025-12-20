@@ -155,19 +155,18 @@ final class ReencodeAndMergeProcessNonZeroExitCode
 
 // TODO: cleanup
 Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
-    Preferences pref,
-    String targetCmd,
-    VideoInPlaylist videoData,
-    bool writeAutoSubs) async* {
+    Preferences pref, String targetCmd, VideoInPlaylist videoData) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
       argument: targetCmd,
       replacements: {
+        TemplateReplacements.preferredWidth: pref.preferredWidth!.toString(),
+        TemplateReplacements.preferredHeight: pref.preferredHeight!.toString(),
         TemplateReplacements.cookie: (pref.cookieFilePath != null)
             ? '--cookies "${pref.cookieFilePath}"'
             : "",
         TemplateReplacements.writeAutoSubs:
-            writeAutoSubs ? '--write-auto-subs' : '',
+            pref.writeAutoSubs! ? '--write-auto-subs' : '',
         TemplateReplacements.videoId: videoData.id,
         TemplateReplacements.outputDir: pref.outputDirPath!
       });
