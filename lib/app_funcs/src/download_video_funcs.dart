@@ -160,7 +160,9 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
       name: 'yt-dlp',
       argument: targetCmd,
       replacements: {
-        TemplateReplacements.cookieFile: pref.cookieFilePath!,
+        TemplateReplacements.cookie: (pref.cookieFilePath != null)
+            ? '--cookies "${pref.cookieFilePath}"'
+            : "",
         TemplateReplacements.videoId: videoData.id,
         TemplateReplacements.outputDir: pref.outputDirPath!
       });

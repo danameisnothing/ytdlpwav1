@@ -26,7 +26,10 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 * If you are having trouble with the program falsely identifying that you do not have either FFmpeg, FFprobe, or yt-dlp, pass in `--no_program_check`, like so : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID --no_program_check`, or `ytdlpwav1 download_single --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR" --id "YOUR_YOUTUBE_VIDEO_ID" --no_program_check` for downloading multiple videos
 * If the program is not working, use `--debug` to tell the program to output a verbose log file, which can be used to diagnose failures
 
-**Note: *Currently, it is required to supply the `cookie_file` option. This will not be required in the future.***
+> [!NOTE]
+> Currently, it is required to supply the `cookie_file` option. This will not be required in the future.
+
+> [!NOTE]
 
 ## Configuration
 *For now, ytdlpwav1 outputs a video with a target resolution of max 1080p. You can not change this setting just yet. This is planned to be configurable in the future.*

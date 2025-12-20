@@ -107,7 +107,7 @@ Future<bool> doDownloadHandling(
   // Assume we are not able to download in the preferred codec
   if (tmpFirst is ProcessNonZeroExitMessage) {
     logger.warning(
-        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}. Although, this could be caused by expired auth cookies.');
+        'Video named ${videoData.title} failed to be downloaded, using fallback command : ${pref.videoRegularCmd}. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
     isDownloadingPreferredFormat = false;
 
     resBroadcast = downloadAndRetrieveCaptionFilesAndVideoFile(
@@ -149,10 +149,10 @@ Future<bool> doDownloadHandling(
       // FIXME: We are not capturing some residual files left by yt-dlp in the case that it errors out, such as leftover thumbnail and .part files while downloading
       if (isSingle) {
         logger.severe(
-            'Video named ${videoData.title} failed to be downloaded. Although, this could be caused by expired auth cookies.');
+            'Video named ${videoData.title} failed to be downloaded. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
       } else {
         logger.warning(
-            'Video named ${videoData.title} failed to be downloaded, continuing. Although, this could be caused by expired auth cookies.');
+            'Video named ${videoData.title} failed to be downloaded, continuing. This could be caused by${(pref.cookieFilePath != null) ? " expired auth cookies, or" : ""} YouTube throttling (HTTP 429).');
       }
       // In case the process managed to make progress far enough for the program to register that we are making progress, thus incrementing the counter
       await cleanupGeneratedFiles(
@@ -281,8 +281,7 @@ Future<bool> doDownloadHandling(
   return true;
 }
 
-Future<void> fetchVideosLogic(
-    Preferences pref, String cookieFile, String playlistId) async {
+Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (await videoDataFile.exists()) {
     logger.info(
@@ -294,7 +293,7 @@ Future<void> fetchVideosLogic(
   spinner.start('Waiting for yt-dlp output');
   late final playlistQuantity;
   try {
-    playlistQuantity = await getPlaylistQuantity(pref, cookieFile, playlistId);
+    playlistQuantity = await getPlaylistQuantity(pref, playlistId);
   } on Exception catch (e) {
     spinner.stop();
     hardExit(e.toString());
@@ -308,7 +307,7 @@ Future<void> fetchVideosLogic(
 
   final videoInfos = <VideoInPlaylist>[];
 
-  final res = getPlaylistVideoInfos(pref, cookieFile, playlistId);
+  final res = getPlaylistVideoInfos(pref, playlistId);
   await for (final videoInfo in res) {
     videoInfos.add(videoInfo);
     playlistFetchInfoProgress.increment();
@@ -353,8 +352,7 @@ Future<void> fetchVideosLogic(
   await videoDataFile.writeAsString(convertedRes, flush: true);
 }
 
-Future<void> downloadVideosLogic(
-    Preferences pref, String cookieFile, String? passedOutDir) async {
+Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (!await videoDataFile.exists()) {
     // TODO: make unnecessary later on
@@ -407,8 +405,8 @@ Future<void> downloadVideosLogic(
   }
 }
 
-Future<void> downloadSingleVideosLogic(Preferences pref, String cookieFile,
-    String? passedOutDir, final String id) async {
+Future<void> downloadSingleVideosLogic(
+    Preferences pref, String? passedOutDir, final String id) async {
   final outDir = passedOutDir ?? Directory.current.path;
   // Exclusively for logging if you are wondering why
   if (passedOutDir != outDir) {
@@ -452,17 +450,17 @@ void main(List<String> args) async {
 
   argParser.addCommand('fetch')
     ..addOption('cookie_file',
-        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
+        abbr: 'c', help: 'The path to the YouTube cookie file')
     ..addOption('playlist_id',
         abbr: 'p', help: 'The target YouTube playlist ID', mandatory: true);
   argParser.addCommand('download')
     ..addOption('cookie_file',
-        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
+        abbr: 'c', help: 'The path to the YouTube cookie file')
     ..addOption('output_dir',
         abbr: 'o', help: 'The target output directory of downloaded videos');
   argParser.addCommand('download_single')
     ..addOption('cookie_file',
-        abbr: 'c', help: 'The path to the YouTube cookie file', mandatory: true)
+        abbr: 'c', help: 'The path to the YouTube cookie file')
     ..addOption('output_dir',
         abbr: 'o', help: 'The target output directory of downloaded videos')
     ..addOption('id',
@@ -587,22 +585,16 @@ void main(List<String> args) async {
       "Make sure to have up-to-date auth cookies beforehand, to prevent unexpected download failures, or YouTube returning sub-optimal quality videos!");
   switch (parsedArgs.command!.name) {
     case 'fetch':
-      // TODO: allow downloading without cookie_file
-      late final cookieFile;
-      try {
-        cookieFile = parsedArgs.command!.option('cookie_file');
-      } on ArgumentError catch (_) {
-        hardExit('Option "cookie_file" is mandatory, but missing');
-      }
+      final cookieFile = parsedArgs.command!.option('cookie_file');
 
-      late final playlistId;
+      late final String playlistId;
       try {
         playlistId = parsedArgs.command!.option('playlist_id')!;
       } on ArgumentError catch (_) {
         hardExit('Option "playlist_id" is mandatory, but missing');
       }
 
-      if (!await File((cookieFile ?? '')).exists()) {
+      if (cookieFile != null && !await File((cookieFile)).exists()) {
         hardExit('Invalid cookie path given');
       }
 
@@ -610,19 +602,13 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..playlistId = playlistId;
 
-      await fetchVideosLogic(preferences, cookieFile!, playlistId);
+      await fetchVideosLogic(preferences, playlistId);
       exit(0);
     case 'download':
-      // TODO: allow downloading without cookie_file
-      late final cookieFile;
-      try {
-        cookieFile = parsedArgs.command!.option('cookie_file');
-      } on ArgumentError catch (_) {
-        hardExit('Option "cookie_file" is mandatory, but missing');
-      }
+      final cookieFile = parsedArgs.command!.option('cookie_file');
 
       final outDir = parsedArgs.command!.option('output_dir');
-      if (!await File((cookieFile ?? '')).exists()) {
+      if (cookieFile != null && !await File((cookieFile)).exists()) {
         hardExit('Invalid cookie path given');
       }
 
@@ -630,18 +616,12 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..outputDirPath = outDir;
 
-      await downloadVideosLogic(preferences, cookieFile!, outDir);
+      await downloadVideosLogic(preferences, outDir);
       exit(0);
     case 'download_single':
-      // TODO: allow downloading without cookie_file
-      late final cookieFile;
-      try {
-        cookieFile = parsedArgs.command!.option('cookie_file');
-      } on ArgumentError catch (_) {
-        hardExit('Option "cookie_file" is mandatory, but missing');
-      }
+      final cookieFile = parsedArgs.command!.option('cookie_file');
 
-      late final id;
+      late final String id;
       try {
         id = parsedArgs.command!.option('id')!;
       } on ArgumentError catch (_) {
@@ -650,7 +630,7 @@ void main(List<String> args) async {
 
       final outDir = parsedArgs.command!.option('output_dir');
 
-      if (!await File((cookieFile ?? '')).exists()) {
+      if (cookieFile != null && !await File((cookieFile)).exists()) {
         hardExit('Invalid cookie path given');
       }
 
@@ -658,7 +638,7 @@ void main(List<String> args) async {
         ..cookieFilePath = cookieFile
         ..outputDirPath = outDir;
 
-      await downloadSingleVideosLogic(preferences, cookieFile!, outDir, id);
+      await downloadSingleVideosLogic(preferences, outDir, id);
       exit(0);
   }
 

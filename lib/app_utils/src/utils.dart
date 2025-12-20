@@ -107,7 +107,7 @@ final class VideoInPlaylist {
 
 /// An enum containing the string to be replaced in the command templates
 enum TemplateReplacements {
-  cookieFile(template: '<cookie_file>'),
+  cookie(template: '<cookie_arg>'),
   playlistId(template: '<playlist_id>'),
   videoId(template: '<video_id>'),
   videoInput(template: '<video_input>'),
@@ -158,7 +158,7 @@ sealed class ProcessRunner {
 
     _processes.add(proc);
     logger.fine(
-        'ProcessRunner: $name (${proc.pid}) spawned with arguments ($args) added to list');
+        'ProcessRunner: $name (${proc.pid}) spawned with arguments (${args.join(" ")}) added to list');
 
     proc.exitCode.then((ec) {
       _processes.remove(proc);

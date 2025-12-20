@@ -7,13 +7,14 @@ import 'package:ytdlpwav1/app_settings/app_settings.dart';
 /// Returns the playlist quantity of a YouTube playlist, with a given cookiefile path for authentication
 ///
 /// Throws a [ProcessExitNonZeroException] if yt-dlp exits with a non-zero exit code
-Future<int> getPlaylistQuantity(
-    Preferences pref, String cookieFile, String playlistId) async {
+Future<int> getPlaylistQuantity(Preferences pref, String playlistId) async {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
       argument: pref.fetchPlaylistItemCountCmd,
       replacements: {
-        TemplateReplacements.cookieFile: cookieFile,
+        TemplateReplacements.cookie: (pref.cookieFilePath != null)
+            ? '--cookies "${pref.cookieFilePath}"'
+            : "",
         TemplateReplacements.playlistId: playlistId
       });
   logger.fine('Started yt-dlp process for fetching playlist quantity');
@@ -38,12 +39,14 @@ Future<int> getPlaylistQuantity(
 ///
 /// Throws a [ProcessExitNonZeroException] if yt-dlp exits with a non-zero exit code
 Stream<VideoInPlaylist> getPlaylistVideoInfos(
-    Preferences pref, String cookieFile, String playlistId) async* {
+    Preferences pref, String playlistId) async* {
   final proc = await ProcessRunner.spawn(
       name: 'yt-dlp',
       argument: pref.fetchVideoInfosCmd,
       replacements: {
-        TemplateReplacements.cookieFile: cookieFile,
+        TemplateReplacements.cookie: (pref.cookieFilePath != null)
+            ? '--cookies "${pref.cookieFilePath}"'
+            : "",
         TemplateReplacements.playlistId: playlistId
       });
   logger.fine('Started yt-dlp process for fetching video infos');
