@@ -52,7 +52,7 @@ Future<void> onDownloadFailureBeforeContinuing(
       flush: true, mode: FileMode.write);
 }
 
-Future<bool> doDownloadHandling(
+Future<(bool, String?)> doDownloadHandling(
     final DownloadVideoUI ui,
     Preferences pref,
     final VideoInPlaylist videoData,
@@ -160,7 +160,7 @@ Future<bool> doDownloadHandling(
           captionFPs: captionFP, endVideoFP: endVideoPath);
       ui.onDownloadFailure();
       await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-      return false;
+      return (false, null);
     //break;
     case ProgressStateStayedUninitializedMessage():
       if (isSingle) {
@@ -174,7 +174,7 @@ Future<bool> doDownloadHandling(
           captionFPs: captionFP, endVideoFP: endVideoPath);
       ui.onDownloadFailure();
       await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-      return false;
+      return (false, null);
   }
 
   final ffThumbExtractedPath =
@@ -278,7 +278,7 @@ Future<bool> doDownloadHandling(
           captionFPs: captionFP, endVideoFP: endVideoPath);
       ui.onDownloadFailure();
       await onDownloadFailureBeforeContinuing(pref, videoInfos, videoData);
-      return false;
+      return (false, null);
     }
   }
 
@@ -287,13 +287,15 @@ Future<bool> doDownloadHandling(
       thumbFP: ffThumbExtractedPath,
       endVideoFP: endVideoPath!);
 
+  final finalFP = "${pref.outputDirPath}${Platform.pathSeparator}$finalVideoFP";
+
   // To fix cases where the original yt-dlp filename is the exact same as this fixed name
   await File(mergedTmpVideoFP.substring(1, mergedTmpVideoFP.length - 1))
-      .rename("${pref.outputDirPath}${Platform.pathSeparator}$finalVideoFP");
+      .rename(finalFP);
 
   await ui.cleanup();
 
-  return true;
+  return (true, finalFP);
 }
 
 Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
@@ -393,7 +395,11 @@ Future<void> downloadVideosLogic(
       (jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>)
           .map((e) => VideoInPlaylist.fromJson(e))
           .toList();
-  logger.fine('Retrieved video data as $videoInfos');
+  logger.fine(
+      'Retrieved video data (description key removed) as ${(jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>).map((e) {
+    e.remove("description");
+    return e;
+  }).toList()}');
 
   final ui = DownloadVideoUI(videoInfos);
 
@@ -404,12 +410,18 @@ Future<void> downloadVideosLogic(
       continue;
     }
 
-    final ret = await doDownloadHandling(ui, pref, videoData, videoInfos,
-        videoInfos.indexOf(videoData), false, writeAutoSubs);
+    final (ret, fullFP) = await doDownloadHandling(ui, pref, videoData,
+        videoInfos, videoInfos.indexOf(videoData), false, writeAutoSubs);
 
     if (!ret) {
       // doDownloadHandling already logs the error message at this point, so just continue
       continue;
+    }
+
+    // Final check, in case there are more gnarly bugs deleting our video
+    if (!await File(fullFP!).exists()) {
+      hardExit(
+          "Video named ${videoData.title} with file path $fullFP failed final validation check, WTF?. Use the --debug flag to see more details");
     }
 
     // TODO: This only saves when we are done! Do this when we are done processing each video!
@@ -441,7 +453,7 @@ Future<void> downloadSingleVideosLogic(Preferences pref, String? passedOutDir,
 
   final ui = DownloadVideoUI(decoyValue);
 
-  final ret = await doDownloadHandling(
+  final (ret, _) = await doDownloadHandling(
       ui, pref, decoyValue.first, decoyValue, 0, true, writeAutoSubs);
 
   if (!ret) {
