@@ -308,7 +308,7 @@ Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   final spinner = CliSpin(spinner: CliSpinners.dots);
 
   spinner.start('Waiting for yt-dlp output');
-  late final playlistQuantity;
+  late final int playlistQuantity;
   try {
     playlistQuantity = await getPlaylistQuantity(pref, playlistId);
   } on Exception catch (e) {

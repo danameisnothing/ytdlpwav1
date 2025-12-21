@@ -325,7 +325,8 @@ Stream<FFmpegMergeFilesStatus?> mergeFiles(Preferences pref, String baseVideoFP,
             ..removeWhere(
                 (cCode, regex) => !regex.hasMatch(captionFP.elementAt(i)));
           logger.fine('Picked ${modMap.entries.first.key}');
-          return '-map ${i + 1} -c:s:$i srt -metadata:s:$i language=${modMap.entries.first.key}';
+          // https://stackoverflow.com/a/35235287
+          return '-map ${i + 1} -c:s:$i srt -metadata:s:$i language=${modMap.entries.first.key} ${(i + 1 == captionFP.length) ? '-disposition:s:0 default' : ''}';
         }, growable: false)
                 .join(' '),
         TemplateReplacements.thumbIn: thumbFP,
