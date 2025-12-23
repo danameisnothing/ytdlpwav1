@@ -30,7 +30,7 @@ final class Preferences {
   final ffmpegCombineFinalVideoCmd =
       'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -map 0:0 -map 0:1 -c:v copy -c:a copy <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
   final ffmpegReencodeAndCombineCmd =
-      'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
+      'ffmpeg -hide_banner -i <video_input> <captions_input_flags> -y -progress - -nostats -map 0:0 -map 0:1 -c:v libsvtav1 -crf 40 -row-mt 1 -c:a libopus <caption_track_mapping_metadata> -attach "<thumb_in>" -metadata:s:t "mimetype=image/png" -metadata:s:t "filename=cover.png" <final_out>';
   final ffprobeFetchVideoInfoCmd =
       'ffprobe -v quiet -show_format -show_streams -count_packets -print_format json <video_input>';
   final ytdlpCheckVersionCmd = 'yt-dlp --version';
