@@ -35,6 +35,3 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 
 > [!WARNING]
 > Downloading videos with YouTube's automatic captions may cause you to be throttled by YouTube, by `yt-dlp` erroring out, complaining about a Too Many Requests error (HTTP 429). If this happens, do not use the `--download_auto_subs` option
-
-> [!NOTE]
-> Currently, the combining step of this program doesn't make the subtitles a default. This is planned to be addressed
