@@ -3,6 +3,9 @@ import 'package:logging/logging.dart';
 final Logger logger = Logger('ytdlpwav1');
 
 final class Preferences {
+  // ehh?
+  final String version = "2025.12.26";
+
   String? cookieFilePath;
   String? playlistId;
   String? outputDirPath;

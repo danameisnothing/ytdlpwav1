@@ -474,7 +474,8 @@ void main(List<String> args) async {
             'Skips checking for available updates for yt-dlp. Useful if the program consistently fails to check for updates, or is falsely identifying an out-of-date version',
         negatable: false)
     ..addFlag('debug',
-        abbr: 'd', help: 'Logs debug output on a file', negatable: false);
+        abbr: 'd', help: 'Logs debug output on a file', negatable: false)
+    ..addCommand('--version');
 
   argParser.addCommand('fetch')
     ..addOption('cookie_file',
@@ -530,8 +531,6 @@ void main(List<String> args) async {
     exit(1);
   }
 
-  if (parsedArgs.command == null) hardExit('No valid command specified');
-
   final preferences = Preferences();
 
   Logger.root.level = Level.INFO;
@@ -567,6 +566,16 @@ void main(List<String> args) async {
     ProcessRunner.killAll();
     exit(0);
   });
+
+  if (parsedArgs.command == null) {
+    hardExit("Invalid command, see usage with --help");
+  }
+
+  // Separated from the ones later on, just so that we don't need to run the version checks and whatnot
+  if (parsedArgs.command!.name == '--version') {
+    print(preferences.version);
+    exit(0);
+  }
 
   if (parsedArgs.flag('debug')) {
     Logger.root.level = Level.ALL;
@@ -721,6 +730,7 @@ void main(List<String> args) async {
       await downloadSingleVideosLogic(preferences, outDir, id);
       exit(0);
   }
+  // Invalid commands is already handled by the parsedArgs.command == null check earlier
 
   /*print(cmdSplitArgs.split(
       'yt-dlp --format "bestvideo[width<=1920][height<=1080][fps<=60]+bestaudio[acodec=opus][audio_channels<=2][asr<=48000]" --output "%(title)s" --restrict-filenames --merge-output-format mkv --write-auto-subs --embed-thumbnail --sub-lang "en.*" --fragment-retries 999 --retries 999 --extractor-retries 0 --cookies "C:\\Users\\testnow720\\Downloads\\cookies-youtube-com.txt" "https://www.youtube.com/watch?v=TXgYLmN6m1U"'));*/
