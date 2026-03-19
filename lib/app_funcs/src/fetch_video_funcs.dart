@@ -71,7 +71,8 @@ Stream<VideoInPlaylist> getPlaylistVideoInfos(
   }
 
   if (await proc.process.exitCode != 0) {
+    // TODO: detect if this failure is caused by unlisted videos, or not
     hardExit(
-        'yt-dlp exited abnormally while fetching playlist info of playlist ID $playlistId');
+        'yt-dlp exited abnormally while fetching playlist info of playlist ID $playlistId. This may be caused by a network error, or the given playlist having now-deleted videos. You can still download the already-fetched videos via `ytdlpwav1 download --outout_dir "<your_dir>"`');
   }
 }

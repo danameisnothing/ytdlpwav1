@@ -298,9 +298,40 @@ Future<(bool, String?)> doDownloadHandling(
   return (true, finalFP);
 }
 
+Future<void> fetchWriteData(File vdF, List<VideoInPlaylist> vI) async {
+  late final List<VideoInPlaylist> dataToConvert;
+
+  if (await vdF.exists()) {
+    dataToConvert =
+        (jsonDecode(await vdF.readAsString())['res'] as List<dynamic>)
+            .map((e) => VideoInPlaylist.fromJson(e))
+            .toList();
+    vI.removeWhere((e) {
+      final modL = List<VideoInPlaylist>.from(dataToConvert)
+        ..removeWhere((f) => f.title != e.title);
+      final retVal = (modL.isEmpty) ? false : true;
+      logger.fine('${e.title}, $modL : $retVal');
+      return retVal;
+    });
+    logger.fine('Concatenating result to existing data file');
+    dataToConvert.addAll(vI);
+  } else {
+    await vdF.create();
+    dataToConvert = vI;
+  }
+
+  final convertedRes =
+      jsonEncode({'res': dataToConvert.map((e) => e.toJson()).toList()});
+
+  logger.fine('Converted video info map to $convertedRes');
+
+  await vdF.writeAsString(convertedRes, flush: true);
+}
+
 Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   final videoDataFile = File(pref.videoDataFileName);
   if (await videoDataFile.exists()) {
+    // FIXME: may be obsolete due to us writing after every fetch, the user may not be fast enough
     logger.info(
         'Overwriting ${pref.videoDataFileName}, terminate the program to cancel this operation');
   }
@@ -327,6 +358,7 @@ Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   final res = getPlaylistVideoInfos(pref, playlistId);
   await for (final videoInfo in res) {
     videoInfos.add(videoInfo);
+    await fetchWriteData(videoDataFile, videoInfos);
     playlistFetchInfoProgress.increment();
     await playlistFetchInfoProgress.renderInLine((total, current) {
       final percStr =
@@ -339,34 +371,6 @@ Future<void> fetchVideosLogic(Preferences pref, String playlistId) async {
   await playlistFetchInfoProgress.finishRender();
 
   logger.fine('End result is $videoInfos');
-
-  late final List<VideoInPlaylist> dataToConvert;
-
-  if (await videoDataFile.exists()) {
-    dataToConvert =
-        (jsonDecode(await videoDataFile.readAsString())['res'] as List<dynamic>)
-            .map((e) => VideoInPlaylist.fromJson(e))
-            .toList();
-    videoInfos.removeWhere((e) {
-      final modL = List<VideoInPlaylist>.from(dataToConvert)
-        ..removeWhere((f) => f.title != e.title);
-      final retVal = (modL.isEmpty) ? false : true;
-      logger.fine('${e.title}, $modL : $retVal');
-      return retVal;
-    });
-    logger.info('Concatenating result to existing data file');
-    dataToConvert.addAll(videoInfos);
-  } else {
-    await videoDataFile.create();
-    dataToConvert = videoInfos;
-  }
-
-  final convertedRes =
-      jsonEncode({'res': dataToConvert.map((e) => e.toJson()).toList()});
-
-  logger.fine('Converted video info map to $convertedRes');
-
-  await videoDataFile.writeAsString(convertedRes, flush: true);
 }
 
 Future<void> downloadVideosLogic(Preferences pref, String? passedOutDir) async {
@@ -517,17 +521,24 @@ void main(List<String> args) async {
         help: 'Preferred downloaded video height',
         defaultsTo: '1080');
 
+  final help = StringBuffer();
+  help.writeln("Usage :" + "\n" + argParser.usage);
+  argParser.commands.forEach((command, ap) {
+    help.writeln("$command :");
+    help.writeln(ap.usage.split("\n").map((e) => "\t$e").join("\n"));
+  });
+
   late final ArgResults parsedArgs;
   try {
     parsedArgs = argParser.parse(args);
   } on ArgParserException catch (_) {
     print("Invalid usage, see below :");
     // We cannot use hardExit since we haven't set up the logger levels yet
-    print(argParser.usage);
+    print(help.toString());
     exit(1);
   }
   if (parsedArgs.arguments.isEmpty) {
-    print(argParser.usage);
+    print(help.toString());
     exit(1);
   }
 
@@ -589,17 +600,11 @@ void main(List<String> args) async {
   }
 
   if (!parsedArgs.flag('no_program_check')) {
-    if (!await hasProgramInstalled('yt-dlp')) {
-      hardExit(
-          'Unable to find yt-dlp. Verify that yt-dlp is mounted in PATH, or pass in --no_program_check to bypass this check');
-    }
-    if (!await hasProgramInstalled('ffprobe')) {
-      hardExit(
-          'Unable to find ffprobe. Verify that ffprobe is mounted in PATH, or pass in --no_program_check to bypass this check');
-    }
-    if (!await hasProgramInstalled('ffmpeg')) {
-      hardExit(
-          'Unable to find ffmpeg. Verify that ffmpeg is mounted in PATH, or pass in --no_program_check to bypass this check');
+    final programs = ['yt-dlp', 'ffprobe', 'ffmpeg'];
+    for (final pg in programs) {
+        if (!await hasProgramInstalled(pg)) {
+            hardExit('Unable to find $pg. Verify that $pg is mounted in PATH, or pass in --no_program_check to bypass this check');
+        }
     }
   }
 
