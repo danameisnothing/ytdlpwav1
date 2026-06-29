@@ -11,6 +11,12 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 * FFmpeg and FFprobe
 * yt-dlp (The latest version is **heavily recommended**, as an out-of-date version can cause issues regarding downloads, either to fetch video information, or downloading the actual video)
 
+## Building
+From the project root directory, run the following :
+- `dart pub get`
+- `dart compile exe bin/ytdlpwav1.dart -o ytdlpwav1.exe`
+
+
 ## Getting Started Guide
 
 > [!NOTE]
