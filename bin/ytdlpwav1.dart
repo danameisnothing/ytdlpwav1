@@ -125,8 +125,14 @@ Future<(bool, String?)> doDownloadHandling(
 
   // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
   // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
+  logger.warning("title : ${videoData.title}");
 
-  final lastRet = await lastRetStream.last;
+  // ugly hack to fix crashing when a video is already downloaded, but that video has a one-worded title.
+  if ((await lastRetStream.length) < 1) {
+    hardExit("Video of the same ID is already downloaded at the given path, aborting");
+  }
+
+  final lastRet = lastRetStream.last;
 
   logger.fine('End result received : $captionFP');
 
@@ -609,7 +615,16 @@ void main(List<String> args) async {
   }
 
   if (!parsedArgs.flag('no_program_check')) {
-    final updtRes = await http.get(preferences.ytdlpVersionCheckUri);
+    // I hate how spaghetti this program is. Too lazy to re-write this pile of shit, ah well
+    late final updtRes;
+    try {
+      updtRes = await http.get(preferences.ytdlpVersionCheckUri);
+    } catch (e) {
+      logger.fine('Failed to check for yt-dlp updates. Error : $e');
+      logger.warning(
+          'Failed to check for yt-dlp updates. You may not be connected to the Internet. Pass in --no_update_check to bypass this check. Continuing without checking for updates');
+      return;
+    }
     if (updtRes.statusCode != 200) {
       final rlRemaining = int.parse(updtRes.headers['x-ratelimit-remaining']!);
       if (rlRemaining == 0) {
