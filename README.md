@@ -20,11 +20,11 @@ This program relies on FFmpeg, FFprobe and yt-dlp being installed and added to P
 > And also make sure to have an up-to-date YouTube cookie file! If not, then you might experience unexpected download failures, or sub-optimal video quality.
 
 ### Downloading YouTube videos from a YouTube Playlist
-* To download a collection of videos from a YouTube playlist, you must first fetch a list of videos from a playlist. To do that, first run the executable with arguments as such : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID"`. This command will generate a file called `ytdlpwav1_video_data.json` that contains YouTube video IDs from the chosen playlist.
+* To download a collection of YouTube videos from a YouTube playlist, you must first fetch a list of videos from a playlist. To do that, first run the executable with arguments as such : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID"`. This command will generate a file called `ytdlpwav1_video_data.json` that contains YouTube video IDs from the chosen playlist.
 * After that, to download the videos themselves, run the executable with the following arguments : `ytdlpwav1 download --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR"`
 
 ### Downloading a single YouTube video
-* To download just a single YouTube, run the executable with this : `ytdlpwav1 download_single --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR" --id "YOUR_YOUTUBE_VIDEO_ID"`
+* To download a single YouTube video, run the executable with this : `ytdlpwav1 download_single --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR" --id "YOUR_YOUTUBE_VIDEO_ID"`
 
 ### Configuration
 * If you are having trouble with the program falsely identifying that you do not have either FFmpeg, FFprobe, or yt-dlp, pass in `--no_program_check`, like so : `ytdlpwav1 fetch --cookie_file "YOUR_COOKIE_FILE_PATH" --playlist_id "YOUR_YOUTUBE_PLAYLIST_ID --no_program_check`, or `ytdlpwav1 download_single --cookie_file "YOUR_COOKIE_FILE_PATH" --output_dir "YOUR_OUTPUT_DIR" --id "YOUR_YOUTUBE_VIDEO_ID" --no_program_check` for downloading multiple videos
