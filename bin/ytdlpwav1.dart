@@ -125,8 +125,6 @@ Future<(bool, String?)> doDownloadHandling(
 
   // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
   // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
-  logger.warning("title : ${videoData.title}");
-
   // ugly hack to fix crashing when a video is already downloaded, but that video has a one-worded title.
   if ((await lastRetStream.length) < 1) {
     hardExit("Video of the same ID is already downloaded at the given path, aborting");
