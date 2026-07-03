@@ -203,7 +203,7 @@ Stream<DownloadReturnStatus> downloadAndRetrieveCaptionFilesAndVideoFile(
 
           // https://stackoverflow.com/questions/27545081/best-way-to-get-all-substrings-matching-a-regexp-in-dart
           final endVideoFp =
-              RegExp(r'(?<=\")\S+(?=\")').firstMatch(output)!.group(0)!;
+              RegExp(r'(?<=\").+(?=\")').firstMatch(output)!.group(0)!;
           logger.fine('Found merged video : $endVideoFp');
           yield DownloadReturnStatus.videoAudioMerged(endVideoFp);
         }
