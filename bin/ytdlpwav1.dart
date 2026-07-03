@@ -125,12 +125,22 @@ Future<(bool, String?)> doDownloadHandling(
 
   // Changed due to us prior are not waiting for ui.printDownloadVideoUI to complete in the last moment in the main isolate, so the one inside asyncMap may still be going
   // Listen first to catch all messages, because in the previous version, due to a resBroadcast.first await placed before we register the asyncMap listener, it consumed the first ever event
+
+  // am a bit dumb. querying for lastRetStream.length consumes the whole stream!
+  int lrtLen = 0;
+  // can't even be fussed about types anymore
+  dynamic lrtLast = 0;
+  await for (final entry in lastRetStream) {
+    lrtLast = entry;
+    ++lrtLen;
+  }
+
   // ugly hack to fix crashing when a video is already downloaded, but that video has a one-worded title.
-  if ((await lastRetStream.length) < 1) {
+  if (lrtLen < 1) {
     hardExit("Video of the same ID is already downloaded at the given path, aborting");
   }
 
-  final lastRet = lastRetStream.last;
+  final lastRet = lrtLast;
 
   logger.fine('End result received : $captionFP');
 
@@ -142,7 +152,9 @@ Future<(bool, String?)> doDownloadHandling(
       logger.fine('Deleted subtitle file on path $path');
     }
     if (endVideoPath != null) {
+      logger.warning("path $endVideoPath");
       await File(endVideoPath!).delete();
+      logger.warning("path $endVideoPath post");
       logger.fine('Deleted video file on path $endVideoPath');
     }
   }
